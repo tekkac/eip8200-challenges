@@ -90,4 +90,33 @@ theorem runLocated_add (loc : Challenge.EvmProof.Stepper.Located Artifact.submis
   simp only [hstack, hpcv, Challenge.EvmProof.Word.ofNat_add_ofNat hsum,
     Challenge.EvmProof.Word.succ_ofNat hp]
 
+theorem isTrue_of_ne_zero {a : UInt256} (h : a ≠ 0) : UInt256.isTrue a := by
+  intro hz
+  apply h
+  apply Challenge.EvmProof.Word.word_ext
+  rw [show (0 : UInt256).toNat = 0 by decide]
+  exact hz
+
+theorem not_isTrue_of_eq_zero {a : UInt256} (h : a = 0) : ¬ UInt256.isTrue a := by
+  rw [h]
+  exact Logic.not_isTrue_zero
+
+theorem runLocated_jumpi_not_taken (loc : Challenge.EvmProof.Stepper.Located Artifact.submissionArtifact .Osaka)
+    (hins : loc.instruction = .op .JUMPI)
+    (s : State) (dest : Nat) (cond : UInt256) (rest : List UInt256) (p : Nat)
+    (hpc : s.pc.toNat = Artifact.submissionArtifact.instructionPC loc.index)
+    (hpcv : s.pc = UInt256.ofNat p) (hp : p + 1 < 2 ^ 256)
+    (hstack : s.stack = UInt256.ofNat dest :: cond :: rest) (hlen : rest.length < 1022)
+    (hcond : ¬ UInt256.isTrue cond) :
+    Challenge.EvmProof.Stepper.runLocated loc s =
+      some { s with stack := rest, pc := UInt256.ofNat (p + 1) } := by
+  unfold Challenge.EvmProof.Stepper.runLocated
+  rw [if_pos hpc, hins]
+  unfold Challenge.EvmProof.Stepper.runInstr
+  have hcap : s.stack.length < 1024 := by rw [hstack]; simp; omega
+  rw [if_pos hcap]
+  simp only [hstack, hpcv]
+  rw [if_neg hcond]
+  simp [Challenge.EvmProof.Word.succ_ofNat hp]
+
 end Challenge.Modexp.Submission.Proofs.Memo.Step

@@ -39,20 +39,31 @@ private def soundOne {s t : State}
   Challenge.EvmProof.Stepper.runLocated_sound hcode hfork h hrun hnp
 
 def gasSteps_match (input : ByteArray) (h : guardDiff Data.checks input = 0) :
-    Challenge.EvmProof.GasSteps (Main.trampolineState input 1473) (returnedState input) :=
-  (((((sound preludePath rfl (run_prelude input) rfl rfl deployAddress_not_precompile).trans
-    (sound chunk0Path rfl (run_chunk0 input) rfl rfl deployAddress_not_precompile)).trans
-    (sound branchPrefixPath rfl (run_branch_match_prefix input h) rfl rfl deployAddress_not_precompile)).trans
+    Challenge.EvmProof.GasSteps (Main.trampolineState input 1473) (returnedState input) := by
+  have ⟨h32, hrest⟩ := (guardDiff_split input).1 h
+  exact ((((((sound earlyPrefixPath rfl (run_early_prefix input) rfl rfl deployAddress_not_precompile).trans
+    (soundOne rfl (run_early_jump_not_taken input h32) rfl rfl deployAddress_not_precompile)).trans
+    (sound checksPath rfl (run_checks input) rfl rfl deployAddress_not_precompile)).trans
+    (sound branchPrefixPath rfl (run_branch_match_prefix input hrest) rfl rfl deployAddress_not_precompile)).trans
     (soundOne rfl (run_branch_jump input) rfl rfl deployAddress_not_precompile)).trans
     (sound returnPath rfl (run_return input) rfl rfl deployAddress_not_precompile))
 
 def gasSteps_fallback (input : ByteArray) (h : guardDiff Data.checks input ≠ 0) :
-    Challenge.EvmProof.GasSteps (Main.trampolineState input 1473) (Main.trampolineState input 1553) :=
-  (((((sound preludePath rfl (run_prelude input) rfl rfl deployAddress_not_precompile).trans
-    (sound chunk0Path rfl (run_chunk0 input) rfl rfl deployAddress_not_precompile)).trans
-    (sound branchPath rfl (run_branch_mismatch input h) rfl rfl deployAddress_not_precompile)).trans
-    (sound fallbackPrefixPath rfl (run_fallback_prefix input) rfl rfl deployAddress_not_precompile)).trans
-    (soundOne rfl (run_fallback_jump input) rfl rfl deployAddress_not_precompile))
+    Challenge.EvmProof.GasSteps (Main.trampolineState input 1473) (Main.trampolineState input 1553) := by
+  by_cases h32 : MachineState.readWord input 32 = 0
+  · have hrest : guardDiff remainingChecks input ≠ 0 := by
+      intro hr
+      apply h
+      rw [guardDiff_split]
+      exact ⟨h32, hr⟩
+    exact (((((sound earlyPrefixPath rfl (run_early_prefix input) rfl rfl deployAddress_not_precompile).trans
+      (soundOne rfl (run_early_jump_not_taken input h32) rfl rfl deployAddress_not_precompile)).trans
+      (sound checksPath rfl (run_checks input) rfl rfl deployAddress_not_precompile)).trans
+      (sound branchPath rfl (run_branch_mismatch input hrest) rfl rfl deployAddress_not_precompile)).trans
+      (sound fallbackPrefixPath rfl (run_fallback_prefix input) rfl rfl deployAddress_not_precompile)).trans
+      (soundOne rfl (run_fallback_jump input) rfl rfl deployAddress_not_precompile)
+  · exact ((sound earlyPrefixPath rfl (run_early_prefix input) rfl rfl deployAddress_not_precompile).trans
+      (soundOne rfl (run_early_jump_taken input h32) rfl rfl deployAddress_not_precompile))
 
 @[simp] theorem returnedState_isDone (input : ByteArray) :
     (returnedState input).isDone = true := by

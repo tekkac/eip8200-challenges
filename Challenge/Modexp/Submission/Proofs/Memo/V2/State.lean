@@ -15,19 +15,40 @@ open Challenge.Modexp.Submission.Proofs.Bytecode
 open Challenge.Modexp.Submission.Proofs.Memo
 open Logic
 
+def earlyJumpState (input : ByteArray) : State :=
+  { initialState submissionBytecode input 0 with
+      pc := UInt256.ofNat 1480
+      stack := [UInt256.ofNat 1553, MachineState.readWord input 32] }
+
 def accState (input : ByteArray) (pc : Nat) (acc : UInt256) : State :=
   { initialState submissionBytecode input 0 with
       pc := UInt256.ofNat pc
       stack := [acc] }
 
-def acc0 (input : ByteArray) : UInt256 :=
-  UInt256.xor (MachineState.readWord input 0) (1 : UInt256)
+def remainingChecks : List (Nat × UInt256) :=
+  [(0, 1),
+   (64, 1),
+   (96, 19168523805780691591649194585559922978212372797203590076661305677823631949824)]
 
-def chunk0 : List (Nat × UInt256) := (Data.checks.drop 1).take 3
-def acc1 (input : ByteArray) : UInt256 := scanDiff input chunk0 (acc0 input)
+def accRest (input : ByteArray) : UInt256 :=
+  guardDiff remainingChecks input
 
-theorem acc1_eq_guardDiff (input : ByteArray) :
-    acc1 input = guardDiff Data.checks input := by rfl
+theorem guardDiff_split (input : ByteArray) :
+    guardDiff Data.checks input = 0 ↔
+      MachineState.readWord input 32 = 0 ∧ guardDiff remainingChecks input = 0 := by
+  rw [guardDiff_eq_zero_iff, guardDiff_eq_zero_iff]
+  simp [WordsMatch, Data.checks, remainingChecks]
+  tauto
+
+def branchJumpState (input : ByteArray) : State :=
+  { initialState submissionBytecode input 0 with
+      pc := UInt256.ofNat 1535
+      stack := [UInt256.ofNat 1540, UInt256.ofNat 1] }
+
+def fallbackJumpState (input : ByteArray) : State :=
+  { initialState submissionBytecode input 0 with
+      pc := UInt256.ofNat 1539
+      stack := [UInt256.ofNat 1553] }
 
 def storeWord (mem : ByteArray) (addr w : Nat) : ByteArray :=
   MachineState.writeBytes mem (Data.Bytes.natToBytesPadded w 32) addr
@@ -37,7 +58,7 @@ def answerMemory : ByteArray :=
 
 def returnedState (input : ByteArray) : State :=
   { initialState submissionBytecode input 0 with
-      pc := UInt256.ofNat 1548
+      pc := UInt256.ofNat 1549
       stack := []
       memory := answerMemory
       activeWords := UInt256.ofNat 1
