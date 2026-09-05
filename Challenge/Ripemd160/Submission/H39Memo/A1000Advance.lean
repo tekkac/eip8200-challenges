@@ -11,7 +11,7 @@ open EvmSemantics EvmSemantics.EVM Challenge.EvmProof DispatchState
 theorem run_advancePrefix (s : State) (n : Nat) (hrun : s.halt = .Running) :
     Stepper.runLocatedBlock advancePrefix (checked s n) =
       some (atPC s 3182 [3161,
-        UInt256.isZero (UInt256.eq 992 (UInt256.ofNat (32 * (n + 2)))),
+        UInt256.xor 992 (UInt256.ofNat (32 * (n + 2))),
         UInt256.ofNat (32 * (n + 2)), cacheWord]) := by
   have hsum : 32 + 32 * (n + 1) = 32 * (n + 2) := by omega
   simp [advancePrefix, opAt, pushAt, Stepper.runLocatedBlock, Stepper.runLocated,
@@ -50,4 +50,3 @@ theorem run_notAPrefix (s : State) (hrun : s.halt = .Running) :
     Challenge.EvmProof.Word.word_toNat_ofNat]
 
 end Challenge.Ripemd160.Submission.H39Memo.A1000
-

@@ -68,8 +68,8 @@ def advancePrefix : List Located :=
    opAt 1129 (.ADD),
    opAt 1130 (.Dup ⟨0, by decide⟩),
    pushAt 1131 2 992,
-   opAt 1132 (.EQ),
-   opAt 1133 (.ISZERO),
+   opAt 1132 (.XOR),
+   opAt 1133 (.JUMPDEST),
    pushAt 1134 2 3161]
 
 def advancePath : List Located :=
@@ -77,8 +77,8 @@ def advancePath : List Located :=
    opAt 1129 (.ADD),
    opAt 1130 (.Dup ⟨0, by decide⟩),
    pushAt 1131 2 992,
-   opAt 1132 (.EQ),
-   opAt 1133 (.ISZERO),
+   opAt 1132 (.XOR),
+   opAt 1133 (.JUMPDEST),
    pushAt 1134 2 3161,
    opAt 1135 (.JUMPI)]
 
@@ -121,4 +121,3 @@ def notAPath : List Located :=
    opAt 1157 (.JUMP)]
 
 end Challenge.Ripemd160.Submission.H39Memo.A1000
-
