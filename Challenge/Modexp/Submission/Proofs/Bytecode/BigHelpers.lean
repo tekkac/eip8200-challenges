@@ -1824,7 +1824,7 @@ def subtractGuardPath :
     List (Challenge.EvmProof.Stepper.Located Artifact.submissionArtifact .Osaka) :=
   [opAt 147 .JUMPDEST, opAt 148 (.Dup ⟨8, by decide⟩),
    opAt 149 (.Dup ⟨1, by decide⟩), opAt 150 .LT, opAt 151 .ISZERO,
-   pushAt 152 2 1427, opAt 153 .JUMPI]
+   pushAt 152 2 236, opAt 153 .JUMPI]
 
 def subtractBodyPath :
     List (Challenge.EvmProof.Stepper.Located Artifact.submissionArtifact .Osaka) :=
@@ -2174,86 +2174,6 @@ def selectLoopEntry (s : State) (dst src take modulus : UInt256)
   Decode.isValidJumpDest submissionBytecode 236 = true :=
   Artifact.isValidJumpDest_index 201 (by rfl)
 
-/-! ### Appended mask trampoline `R` (pc 1427) and its `copyLimbs` shortcut
-
-`addMaskedMod`'s third loop is a branch-free select computing, per limb,
-`(~mask & sum) | (mask & candidate)` with `mask = 0 - useSub`.  Only two values
-of `mask` can occur, and both have a cheaper realisation: `mask = 0` leaves
-every limb unchanged, and `mask` all-ones reproduces the candidate array
-verbatim.  The appended trampoline recomputes `mask` once and dispatches, so
-the select loop is never entered. -/
-
-def addMaskPath :
-    List (Challenge.EvmProof.Stepper.Located Artifact.submissionArtifact .Osaka) :=
-  [opAt 1052 .JUMPDEST, opAt 1053 .POP, opAt 1054 (.Dup ⟨0, by decide⟩),
-   opAt 1055 .ISZERO, opAt 1056 (.Dup ⟨2, by decide⟩), opAt 1057 .OR,
-   pushAt 1058 0 0, opAt 1059 .SUB, opAt 1060 (.Dup ⟨0, by decide⟩),
-   pushAt 1061 2 1451, opAt 1062 .JUMPI]
-
-def addSkipPath :
-    List (Challenge.EvmProof.Stepper.Located Artifact.submissionArtifact .Osaka) :=
-  [pushAt 1063 0 0, pushAt 1064 2 293, opAt 1065 .JUMP]
-
-def addCopyPath :
-    List (Challenge.EvmProof.Stepper.Located Artifact.submissionArtifact .Osaka) :=
-  [opAt 1070 .JUMPDEST, pushAt 1071 2 1464, opAt 1072 (.Dup ⟨9, by decide⟩),
-   pushAt 1073 2 5120, opAt 1074 (.Dup ⟨7, by decide⟩), pushAt 1075 2 58,
-   opAt 1076 .JUMP]
-
-def addCopyReturnPath :
-    List (Challenge.EvmProof.Stepper.Located Artifact.submissionArtifact .Osaka) :=
-  [opAt 1077 .JUMPDEST, pushAt 1078 0 0, pushAt 1079 2 293, opAt 1080 .JUMP]
-
-@[simp] private theorem addTailPCs (i : Nat) (hi : 1052 ≤ i) (hii : i ≤ 1080) :
-    Artifact.submissionArtifact.instructionPC i =
-      ([1427,1428,1429,1430,1431,1432,1433,1434,1435,1436,1439,1440,1441,
-        1444,1445,1446,1447,1450,1451,1452,1455,1456,1459,1460,1463,1464,
-        1465,1466,1469])[i - 1052]! := by
-  interval_cases i <;> decide
-
-@[simp] private theorem jump1427 :
-    Decode.isValidJumpDest submissionBytecode 1427 = true :=
-  Artifact.isValidJumpDest_index 1052 (by rfl)
-
-@[simp] private theorem jump1451 :
-    Decode.isValidJumpDest submissionBytecode 1451 = true :=
-  Artifact.isValidJumpDest_index 1070 (by rfl)
-
-@[simp] private theorem jump1464 :
-    Decode.isValidJumpDest submissionBytecode 1464 = true :=
-  Artifact.isValidJumpDest_index 1077 (by rfl)
-
-@[simp] private theorem jump58 :
-    Decode.isValidJumpDest submissionBytecode 58 = true :=
-  Artifact.isValidJumpDest_index 46 (by rfl)
-
-/-- The reduction mask `0 - useSub` the trampoline recomputes. -/
-def selectMaskOf (s : State) (dst src take modulus : UInt256)
-    (count : Nat) : UInt256 :=
-  let mask := 0 - take
-  let added := addProgress s.memory s.activeWords dst src mask count
-  let subtracted := subtractProgress added.memory added.activeWords dst modulus
-    count
-  0 - UInt256.lor added.carry (UInt256.isZero subtracted.borrow)
-
-/-- The trampoline's working frame: the subtract loop's counter popped and the
-recomputed mask pushed in its place. -/
-def maskFrame (s : State) (dst src take modulus : UInt256) (count : Nat)
-    (returnDest : UInt256) (rest : List UInt256) : List UInt256 :=
-  let mask := 0 - take
-  let added := addProgress s.memory s.activeWords dst src mask count
-  let subtracted := subtractProgress added.memory added.activeWords dst modulus
-    count
-  [selectMaskOf s dst src take modulus count, subtracted.borrow, added.carry,
-    mask, dst, src, take, modulus, UInt256.ofNat count, returnDest] ++ rest
-
-/-- Entry of the trampoline: the subtract loop's exit frame parked at
-`JUMPDEST` 1427 instead of at 236. -/
-def maskEntry (s : State) (dst src take modulus : UInt256) (count : Nat)
-    (returnDest : UInt256) (rest : List UInt256) : State :=
-  { subtractLoop s dst src take modulus count count returnDest rest with
-      pc := UInt256.ofNat 1427 }
-
 set_option linter.unusedSimpArgs false in
 theorem run_subtractGuard (s : State) (dst src take modulus : UInt256)
     (count i : Nat) (returnDest : UInt256) (rest : List UInt256)
@@ -2338,14 +2258,15 @@ theorem run_subtractFinishGuard (s : State) (dst src take modulus : UInt256)
     (hrun : s.halt = .Running) :
     Challenge.EvmProof.Stepper.runLocatedBlock subtractGuardPath
       (subtractLoop s dst src take modulus count count returnDest rest) =
-        some (maskEntry s dst src take modulus count returnDest rest) := by
+        some { subtractLoop s dst src take modulus count count returnDest rest with
+          pc := UInt256.ofNat 236 } := by
   have hzeroFalse : ¬(UInt256.ofNat 0).isZero.toNat = 0 := by decide
-  have hdest : (1427 : UInt256) = UInt256.ofNat 1427 := by decide
-  have hdestNat : (1427 : UInt256).toNat = 1427 := by decide
+  have hdest : (236 : UInt256) = UInt256.ofNat 236 := by decide
+  have hdestNat : (236 : UInt256).toNat = 236 := by decide
   have hjump : Decode.isValidJumpDest submissionBytecode
-      (1427 : UInt256).toNat = true := by
+      (236 : UInt256).toNat = true := by
     rw [hdestNat]
-    exact jump1427
+    exact jump236
   have hpc : UInt256.ofNat 179 + UInt256.ofNat 3 = UInt256.ofNat 182 := by
     exact Challenge.EvmProof.Word.ofNat_add_ofNat (by norm_num)
   have hc10 : rest.length + 10 < 1024 := by omega
@@ -2358,7 +2279,7 @@ theorem run_subtractFinishGuard (s : State) (dst src take modulus : UInt256)
     Challenge.EvmProof.Word.succ_ofNat_mod,
     Challenge.EvmProof.Word.ofNat_add_mod,
     Challenge.EvmProof.Word.word_toNat_ofNat, Nat.mod_eq_of_lt,
-    hzeroFalse, hdest, hdestNat, hjump, jump1427, maskEntry, hpc]
+    hzeroFalse, hdest, hdestNat, hjump, jump236, hpc]
 
 set_option linter.unusedSimpArgs false in
 theorem run_subtractToSelect (s : State) (dst src take modulus : UInt256)
@@ -2632,134 +2553,13 @@ def selectExit (s : State) (dst src take modulus : UInt256)
   { selectLoop s dst src take modulus count count returnDest rest with
       pc := UInt256.ofNat 293 }
 
-/-- The two possible outcomes of the third loop, as a memory/active-words
-pair with exactly the shape `selectProgress` had.  Keeping it a single
-application (rather than an `if` inlined into the two `State` fields) means
-`addReturned`'s term is the same size as before the rewrite. -/
-def maskChoice (memory : ByteArray) (activeWords dst selectMask : UInt256)
-    (count : Nat) : SelectProgress :=
-  if selectMask.toNat = 0 then ⟨memory, activeWords⟩
-  else ⟨copyMemory memory dst (UInt256.ofNat 5120) count,
-        copyWords activeWords dst (UInt256.ofNat 5120) count⟩
-
-/-- `0 - u` is zero exactly when `u` is: the zero direction. -/
-theorem mask_toNat_of_zero (u : UInt256) (h : u.toNat = 0) :
-    (0 - u).toNat = 0 := by
-  have hword : u = UInt256.ofNat 0 := by
-    rw [Challenge.EvmProof.Word.word_eq_ofNat_toNat u, h]
-  rw [hword]
-  decide
-
-/-- `0 - u` is all ones when `u` is one. -/
-theorem mask_toNat_of_one (u : UInt256) (h : u.toNat = 1) :
-    ¬ (0 - u).toNat = 0 := by
-  have hword : u = UInt256.ofNat 1 := by
-    rw [Challenge.EvmProof.Word.word_eq_ofNat_toNat u, h]
-  rw [hword]
-  decide
-
-/-- Zero mask: `maskChoice` is the identity.  Stated with `selectMask` as a
-variable so the rewrite never exposes the `if` to `simp` (the globally
-registered `word_toNat_sub` would otherwise renormalise the condition). -/
-theorem maskChoice_of_zero (memory : ByteArray)
-    (activeWords dst selectMask : UInt256) (count : Nat)
-    (h : selectMask.toNat = 0) :
-    maskChoice memory activeWords dst selectMask count =
-      ⟨memory, activeWords⟩ := by
-  simp [maskChoice, h]
-
-/-- Non-zero mask: `maskChoice` is one `copyLimbs`. -/
-theorem maskChoice_of_pos (memory : ByteArray)
-    (activeWords dst selectMask : UInt256) (count : Nat)
-    (h : ¬ selectMask.toNat = 0) :
-    maskChoice memory activeWords dst selectMask count =
-      ⟨copyMemory memory dst (UInt256.ofNat 5120) count,
-       copyWords activeWords dst (UInt256.ofNat 5120) count⟩ := by
-  simp [maskChoice, h]
-
-/-- `JUMPI` fell through: the mask is zero, the conditional subtraction does
-not happen. -/
-def maskFallthrough (s : State) (dst src take modulus : UInt256) (count : Nat)
-    (returnDest : UInt256) (rest : List UInt256) : State :=
-  { subtractLoop s dst src take modulus count count returnDest rest with
-      pc := UInt256.ofNat 1440
-      stack := maskFrame s dst src take modulus count returnDest rest }
-
-/-- `JUMPI` taken: the mask is all ones, take the `copyLimbs` shortcut. -/
-def maskCopyEntry (s : State) (dst src take modulus : UInt256) (count : Nat)
-    (returnDest : UInt256) (rest : List UInt256) : State :=
-  { subtractLoop s dst src take modulus count count returnDest rest with
-      pc := UInt256.ofNat 1451
-      stack := maskFrame s dst src take modulus count returnDest rest }
-
-/-- State after `copyLimbs(dst, 0x1400, count)` returns to 1380. -/
-def maskCopied (s : State) (dst src take modulus : UInt256) (count : Nat)
-    (returnDest : UInt256) (rest : List UInt256) : State :=
-  copyReturned (maskCopyEntry s dst src take modulus count returnDest rest)
-    dst (UInt256.ofNat 5120) count (UInt256.ofNat 1464)
-    (maskFrame s dst src take modulus count returnDest rest)
-
-/-- Zero-mask branch arriving at the epilogue with a dummy loop counter. -/
-def maskSkipExit (s : State) (dst src take modulus : UInt256) (count : Nat)
-    (returnDest : UInt256) (rest : List UInt256) : State :=
-  { subtractLoop s dst src take modulus count count returnDest rest with
-      pc := UInt256.ofNat 293
-      stack := (0 : UInt256) ::
-        maskFrame s dst src take modulus count returnDest rest }
-
-/-- All-ones-mask branch arriving at the same epilogue. -/
-def maskCopyExit (s : State) (dst src take modulus : UInt256) (count : Nat)
-    (returnDest : UInt256) (rest : List UInt256) : State :=
-  { maskCopied s dst src take modulus count returnDest rest with
-      pc := UInt256.ofNat 293
-      stack := (0 : UInt256) ::
-        maskFrame s dst src take modulus count returnDest rest }
-
-/-- Both branches land at pc 293 with the same stack and differ only in memory
-and active words, so the conditional lives in those two leaf fields rather than
-around the whole state. -/
-def addExitFrame (s : State) (dst src take modulus : UInt256) (count : Nat)
-    (returnDest : UInt256) (rest : List UInt256) : State :=
-  { subtractLoop s dst src take modulus count count returnDest rest with
-      pc := UInt256.ofNat 293
-      stack := (0 : UInt256) ::
-        maskFrame s dst src take modulus count returnDest rest
-      memory := (maskChoice
-        (subtractLoop s dst src take modulus count count returnDest rest).memory
-        (subtractLoop s dst src take modulus count count returnDest
-          rest).activeWords dst (selectMaskOf s dst src take modulus count)
-        count).memory
-      activeWords := (maskChoice
-        (subtractLoop s dst src take modulus count count returnDest rest).memory
-        (subtractLoop s dst src take modulus count count returnDest
-          rest).activeWords dst (selectMaskOf s dst src take modulus count)
-        count).activeWords }
-
-/-- Zero mask: the whole select loop is skipped, memory untouched. -/
-theorem addExitFrame_of_zero (s : State) (dst src take modulus : UInt256)
-    (count : Nat) (returnDest : UInt256) (rest : List UInt256)
-    (h : (selectMaskOf s dst src take modulus count).toNat = 0) :
-    addExitFrame s dst src take modulus count returnDest rest =
-      maskSkipExit s dst src take modulus count returnDest rest := by
-  simp [addExitFrame, maskSkipExit,
-    maskChoice_of_zero _ _ _ _ _ h]
-
-/-- All-ones mask: the select loop is replaced by one `copyLimbs`. -/
-theorem addExitFrame_of_pos (s : State) (dst src take modulus : UInt256)
-    (count : Nat) (returnDest : UInt256) (rest : List UInt256)
-    (h : ¬ (selectMaskOf s dst src take modulus count).toNat = 0) :
-    addExitFrame s dst src take modulus count returnDest rest =
-      maskCopyExit s dst src take modulus count returnDest rest := by
-  simp [addExitFrame, maskCopyExit, maskCopied, copyReturned,
-    maskCopyEntry, subtractLoop, maskChoice_of_pos _ _ _ _ _ h]
-
 def addReturned (s : State) (dst src take modulus : UInt256)
     (count : Nat) (returnDest : UInt256) (rest : List UInt256) : State :=
   let mask := 0 - take
   let added := addProgress s.memory s.activeWords dst src mask count
   let subtracted := subtractProgress added.memory added.activeWords dst modulus count
   let useSub := UInt256.lor added.carry (UInt256.isZero subtracted.borrow)
-  let progress := maskChoice subtracted.memory subtracted.activeWords dst
+  let progress := selectProgress subtracted.memory subtracted.activeWords dst
     (0 - useSub) count
   { s with pc := returnDest
            stack := rest
@@ -2880,39 +2680,11 @@ theorem addReturned_represents_mod (s : State)
         omega
   have hresultFit : total % modulusValue < bound :=
     (Nat.mod_lt total (by omega)).trans hmodulusBound
-  by_cases hmask : (0 - useSub).toNat = 0
-  · -- No conditional subtraction: the select loop was skipped entirely and the
-    -- destination still holds the wrapped sum, which is already the result.
-    have huseSubZero : useSub.toNat = 0 := by
-      rcases Nat.eq_zero_or_pos useSub.toNat with h | h
-      · exact h
-      · exact absurd hmask (mask_toNat_of_one useSub (by omega))
-    have hchosen' : wrapped = total % modulusValue := by
-      simpa [huseSubZero] using hchosen
-    have hgoal : Limbs.Represents
-        (maskChoice subtracted.memory subtracted.activeWords
-          (UInt256.ofNat dst) (0 - useSub) count).memory dst count
-          (total % modulusValue) := by
-      rw [maskChoice_of_zero _ _ _ _ _ hmask, ← hchosen']
-      exact hsubtractedDst
-    simpa [addReturned, added, subtracted, useSub] using hgoal
-  · -- Conditional subtraction happens: `copyLimbs` moves the candidate array
-    -- into the destination.
-    have huseSubOne : useSub.toNat = 1 := by
-      rcases Nat.eq_zero_or_pos useSub.toNat with h | h
-      · exact absurd (mask_toNat_of_zero useSub h) hmask
-      · omega
-    have hchosen' : candidate = total % modulusValue := by
-      simpa [huseSubOne] using hchosen
-    have hcopy := copyMemory_represents subtracted.memory dst 5120 count
-      candidate hsubtractedCandidate hdstFit hcandidateFit hdstCandidate
-    have hgoal : Limbs.Represents
-        (maskChoice subtracted.memory subtracted.activeWords
-          (UInt256.ofNat dst) (0 - useSub) count).memory dst count
-          (total % modulusValue) := by
-      rw [maskChoice_of_pos _ _ _ _ _ hmask, ← hchosen']
-      exact hcopy
-    simpa [addReturned, added, subtracted, useSub] using hgoal
+  have hselected := selectProgress_represents subtracted.memory
+    subtracted.activeWords dst count wrapped candidate (total % modulusValue)
+    useSub huseSubLe hdstFit hdstCandidate hsubtractedDst
+    hsubtractedCandidate hchosen.symm hresultFit
+  simpa [addReturned, added, subtracted, useSub] using hselected
 
 theorem addReturned_preserves_region (s : State)
     (dst src take modulus ptr count value : Nat)
@@ -2941,21 +2713,9 @@ theorem addReturned_preserves_region (s : State)
       (UInt256.ofNat dst) (UInt256.ofNat modulus) ptr count count value
       (by omega) hcandidateFit hptrCandidate hadded
   let useSub := UInt256.lor added.carry (UInt256.isZero subtracted.borrow)
-  by_cases hmask : (0 - useSub).toNat = 0
-  · have hgoal : Limbs.Represents
-        (maskChoice subtracted.memory subtracted.activeWords
-          (UInt256.ofNat dst) (0 - useSub) count).memory ptr count value := by
-      rw [maskChoice_of_zero _ _ _ _ _ hmask]
-      exact hsubtracted
-    simpa [addReturned, added, subtracted, useSub] using hgoal
-  · have hcopy := represents_copyMemory_disjoint_region subtracted.memory
-      dst 5120 ptr count value hdstFit hptrDst hsubtracted
-    have hgoal : Limbs.Represents
-        (maskChoice subtracted.memory subtracted.activeWords
-          (UInt256.ofNat dst) (0 - useSub) count).memory ptr count value := by
-      rw [maskChoice_of_pos _ _ _ _ _ hmask]
-      exact hcopy
-    simpa [addReturned, added, subtracted, useSub] using hgoal
+  exact represents_selectProgress_disjoint_region subtracted.memory
+    subtracted.activeWords (0 - useSub) dst ptr count count value (by omega)
+    hdstFit hptrDst hsubtracted
 
 @[simp] private theorem selectPCs (i : Nat) (hi : 210 ≤ i) (hii : i ≤ 261) :
     Artifact.submissionArtifact.instructionPC i =
@@ -3076,190 +2836,13 @@ theorem run_selectFinishGuard (s : State) (dst src take modulus : UInt256)
     hzeroFalse, hdest, hdestNat, hjump, jump293, hpc]
 
 set_option linter.unusedSimpArgs false in
-/-- Trampoline with zero mask: `JUMPI` falls through to pc 1356. -/
-theorem run_addMaskFall (s : State) (dst src take modulus : UInt256)
-    (count : Nat) (returnDest : UInt256) (rest : List UInt256)
-    (hcap : rest.length < 1000)
-    (hmask : (selectMaskOf s dst src take modulus count).toNat = 0)
-    (hrun : s.halt = .Running) :
-    Challenge.EvmProof.Stepper.runLocatedBlock addMaskPath
-      (maskEntry s dst src take modulus count returnDest rest) =
-      some (maskFallthrough s dst src take modulus count returnDest rest) := by
-  have hc9 : rest.length + 9 < 1024 := by omega
-  have hc10 : rest.length + 10 < 1024 := by omega
-  have hc11 : rest.length + 11 < 1024 := by omega
-  have hc12 : rest.length + 12 < 1024 := by omega
-  have hzero : ({ val := 0 } : UInt256) = UInt256.ofNat 0 := by decide
-  have hzero' : UInt256.ofNat 0 = (0 : UInt256) := by decide
-  -- `word_toNat_sub` is a global `simp` lemma, so the `JUMPI` condition gets
-  -- normalised into a `%`-expression.  Normalise the hypothesis the same way
-  -- instead of fighting it.
-  have hmaskN := hmask
-  simp only [selectMaskOf, subtractLoop,
-    Challenge.EvmProof.Word.word_toNat_sub,
-    Challenge.EvmProof.Word.word_toNat_lor,
-    Challenge.EvmProof.Word.word_toNat_isZero] at hmaskN
-  rw [show (2 : Nat) ^ 256 =
-    115792089237316195423570985008687907853269984665640564039457584007913129639936
-    from by norm_num] at hmaskN
-  simp [addMaskPath, opAt, pushAt, wfOp,
-    Challenge.EvmProof.Stepper.runLocatedBlock,
-    Challenge.EvmProof.Stepper.runLocated, Challenge.EvmProof.Stepper.runInstr,
-    maskEntry, maskFallthrough, maskFrame, selectMaskOf, subtractLoop,
-    addTailPCs, hc9, hc10, hc11, hc12, hrun, hzero, hzero',
-    UInt256.isTrue, hmask, hmaskN,
-    Challenge.EvmProof.Word.succ_ofNat_mod,
-    Challenge.EvmProof.Word.ofNat_add_mod,
-    Challenge.EvmProof.Word.word_toNat_ofNat, Nat.mod_eq_of_lt]
-
-set_option linter.unusedSimpArgs false in
-/-- Trampoline with all-ones mask: `JUMPI` lands on the copy shortcut. -/
-theorem run_addMaskBranch (s : State) (dst src take modulus : UInt256)
-    (count : Nat) (returnDest : UInt256) (rest : List UInt256)
-    (hcap : rest.length < 1000)
-    (hmask : ¬ (selectMaskOf s dst src take modulus count).toNat = 0)
-    (hcode : s.executionEnv.code = submissionBytecode)
-    (hrun : s.halt = .Running) :
-    Challenge.EvmProof.Stepper.runLocatedBlock addMaskPath
-      (maskEntry s dst src take modulus count returnDest rest) =
-      some (maskCopyEntry s dst src take modulus count returnDest rest) := by
-  have hc9 : rest.length + 9 < 1024 := by omega
-  have hc10 : rest.length + 10 < 1024 := by omega
-  have hc11 : rest.length + 11 < 1024 := by omega
-  have hc12 : rest.length + 12 < 1024 := by omega
-  have hzero : ({ val := 0 } : UInt256) = UInt256.ofNat 0 := by decide
-  have hzero' : UInt256.ofNat 0 = (0 : UInt256) := by decide
-  have h1451 : (1451 : UInt256) = UInt256.ofNat 1451 := by decide
-  have hvalid : Decode.isValidJumpDest submissionBytecode
-      (1451 : UInt256).toNat = true := by
-    rw [show (1451 : UInt256).toNat = 1451 by decide]
-    exact jump1451
-  have hmaskN := hmask
-  simp only [selectMaskOf, subtractLoop,
-    Challenge.EvmProof.Word.word_toNat_sub,
-    Challenge.EvmProof.Word.word_toNat_lor,
-    Challenge.EvmProof.Word.word_toNat_isZero] at hmaskN
-  rw [show (2 : Nat) ^ 256 =
-    115792089237316195423570985008687907853269984665640564039457584007913129639936
-    from by norm_num] at hmaskN
-  simp [addMaskPath, opAt, pushAt, wfOp,
-    Challenge.EvmProof.Stepper.runLocatedBlock,
-    Challenge.EvmProof.Stepper.runLocated, Challenge.EvmProof.Stepper.runInstr,
-    maskEntry, maskCopyEntry, maskFrame, selectMaskOf, subtractLoop,
-    addTailPCs, hc9, hc10, hc11, hc12, hcode, hrun, hzero, hzero',
-    UInt256.isTrue, hmask, hmaskN, hvalid, jump1451, h1451,
-    Challenge.EvmProof.Word.succ_ofNat_mod,
-    Challenge.EvmProof.Word.ofNat_add_mod,
-    Challenge.EvmProof.Word.word_toNat_ofNat, Nat.mod_eq_of_lt]
-
-set_option linter.unusedSimpArgs false in
-/-- Zero-mask tail: push a dummy counter and jump straight to the epilogue. -/
-theorem run_addSkip (s : State) (dst src take modulus : UInt256)
-    (count : Nat) (returnDest : UInt256) (rest : List UInt256)
-    (hcap : rest.length < 1000)
-    (hcode : s.executionEnv.code = submissionBytecode)
-    (hrun : s.halt = .Running) :
-    Challenge.EvmProof.Stepper.runLocatedBlock addSkipPath
-      (maskFallthrough s dst src take modulus count returnDest rest) =
-      some (maskSkipExit s dst src take modulus count returnDest rest) := by
-  have hc9 : rest.length + 9 < 1024 := by omega
-  have hc10 : rest.length + 10 < 1024 := by omega
-  have hc11 : rest.length + 11 < 1024 := by omega
-  have hc12 : rest.length + 12 < 1024 := by omega
-  have hzero : ({ val := 0 } : UInt256) = UInt256.ofNat 0 := by decide
-  have hzero' : UInt256.ofNat 0 = (0 : UInt256) := by decide
-  have h293 : (293 : UInt256) = UInt256.ofNat 293 := by decide
-  have hvalid : Decode.isValidJumpDest submissionBytecode
-      (293 : UInt256).toNat = true := by
-    rw [show (293 : UInt256).toNat = 293 by decide]
-    exact jump293
-  simp [addSkipPath, opAt, pushAt, wfOp,
-    Challenge.EvmProof.Stepper.runLocatedBlock,
-    Challenge.EvmProof.Stepper.runLocated, Challenge.EvmProof.Stepper.runInstr,
-    maskFallthrough, maskSkipExit, maskFrame, subtractLoop,
-    addTailPCs, hc9, hc10, hc11, hc12, hcode, hrun, hzero, hzero',
-    hvalid, jump293, h293,
-    Challenge.EvmProof.Word.succ_ofNat_mod,
-    Challenge.EvmProof.Word.ofNat_add_mod,
-    Challenge.EvmProof.Word.word_toNat_ofNat, Nat.mod_eq_of_lt]
-
-set_option linter.unusedSimpArgs false in
-/-- The copy shortcut sets up `copyLimbs(dst, 0x1400, count)` returning to
-1380. -/
-theorem run_addCopyCall (s : State) (dst src take modulus : UInt256)
-    (count : Nat) (returnDest : UInt256) (rest : List UInt256)
-    (hcap : rest.length < 1000)
-    (hcode : s.executionEnv.code = submissionBytecode)
-    (hrun : s.halt = .Running) :
-    Challenge.EvmProof.Stepper.runLocatedBlock addCopyPath
-      (maskCopyEntry s dst src take modulus count returnDest rest) =
-      some (copyEntry (maskCopyEntry s dst src take modulus count returnDest rest)
-        dst (UInt256.ofNat 5120) count (UInt256.ofNat 1464)
-        (maskFrame s dst src take modulus count returnDest rest)) := by
-  have hc10 : rest.length + 10 < 1024 := by omega
-  have hc11 : rest.length + 11 < 1024 := by omega
-  have hc12 : rest.length + 12 < 1024 := by omega
-  have hc13 : rest.length + 13 < 1024 := by omega
-  have hc14 : rest.length + 14 < 1024 := by omega
-  have hc15 : rest.length + 15 < 1024 := by omega
-  have h58 : (58 : UInt256) = UInt256.ofNat 58 := by decide
-  have h5120 : (5120 : UInt256) = UInt256.ofNat 5120 := by decide
-  have h1464 : (1464 : UInt256) = UInt256.ofNat 1464 := by decide
-  have hvalid : Decode.isValidJumpDest submissionBytecode
-      (58 : UInt256).toNat = true := by
-    rw [show (58 : UInt256).toNat = 58 by decide]
-    exact jump58
-  simp [addCopyPath, opAt, pushAt, wfOp,
-    Challenge.EvmProof.Stepper.runLocatedBlock,
-    Challenge.EvmProof.Stepper.runLocated, Challenge.EvmProof.Stepper.runInstr,
-    maskCopyEntry, copyEntry, maskFrame, subtractLoop,
-    addTailPCs, hc10, hc11, hc12, hc13, hc14, hc15, hcode, hrun,
-    hvalid, jump58, h58, h5120, h1464,
-    Challenge.EvmProof.Word.succ_ofNat_mod,
-    Challenge.EvmProof.Word.ofNat_add_mod,
-    Challenge.EvmProof.Word.word_toNat_ofNat, Nat.mod_eq_of_lt,
-    List.exchange]
-
-set_option linter.unusedSimpArgs false in
-/-- After the copy returns, push a dummy counter and jump to the epilogue. -/
-theorem run_addCopyReturn (s : State) (dst src take modulus : UInt256)
-    (count : Nat) (returnDest : UInt256) (rest : List UInt256)
-    (hcap : rest.length < 1000)
-    (hcode : s.executionEnv.code = submissionBytecode)
-    (hrun : s.halt = .Running) :
-    Challenge.EvmProof.Stepper.runLocatedBlock addCopyReturnPath
-      (maskCopied s dst src take modulus count returnDest rest) =
-      some (maskCopyExit s dst src take modulus count returnDest rest) := by
-  have hc9 : rest.length + 9 < 1024 := by omega
-  have hc10 : rest.length + 10 < 1024 := by omega
-  have hc11 : rest.length + 11 < 1024 := by omega
-  have hc12 : rest.length + 12 < 1024 := by omega
-  have hzero : ({ val := 0 } : UInt256) = UInt256.ofNat 0 := by decide
-  have hzero' : UInt256.ofNat 0 = (0 : UInt256) := by decide
-  have h293 : (293 : UInt256) = UInt256.ofNat 293 := by decide
-  have hvalid : Decode.isValidJumpDest submissionBytecode
-      (293 : UInt256).toNat = true := by
-    rw [show (293 : UInt256).toNat = 293 by decide]
-    exact jump293
-  simp [addCopyReturnPath, opAt, pushAt, wfOp,
-    Challenge.EvmProof.Stepper.runLocatedBlock,
-    Challenge.EvmProof.Stepper.runLocated, Challenge.EvmProof.Stepper.runInstr,
-    maskCopied, maskCopyExit, maskCopyEntry, copyReturned, maskFrame,
-    subtractLoop, addTailPCs, hc9, hc10, hc11, hc12, hcode, hrun,
-    hzero, hzero', hvalid, jump293, h293,
-    Challenge.EvmProof.Word.succ_ofNat_mod,
-    Challenge.EvmProof.Word.ofNat_add_mod,
-    Challenge.EvmProof.Word.word_toNat_ofNat, Nat.mod_eq_of_lt]
-
-set_option linter.unusedSimpArgs false in
-/-- `addMaskedMod`'s epilogue: drop the frame and return. -/
-theorem run_addExit (s : State) (dst src take modulus : UInt256)
+theorem run_selectExit (s : State) (dst src take modulus : UInt256)
     (count : Nat) (returnDest : UInt256) (rest : List UInt256)
     (hcap : rest.length < 1000) (hcode : s.executionEnv.code = submissionBytecode)
     (hvalid : Decode.isValidJumpDest submissionBytecode returnDest.toNat = true)
     (hrun : s.halt = .Running) :
     Challenge.EvmProof.Stepper.runLocatedBlock selectExitPath
-      (addExitFrame s dst src take modulus count returnDest rest) =
+      (selectExit s dst src take modulus count returnDest rest) =
         some (addReturned s dst src take modulus count returnDest rest) := by
   have hc1 : rest.length + 1 < 1024 := by omega
   have hc2 : rest.length + 2 < 1024 := by omega
@@ -3275,12 +2858,10 @@ theorem run_addExit (s : State) (dst src take modulus : UInt256)
   simp [selectExitPath, opAt, wfOp,
     Challenge.EvmProof.Stepper.runLocatedBlock,
     Challenge.EvmProof.Stepper.runLocated, Challenge.EvmProof.Stepper.runInstr,
-    addExitFrame, addReturned, maskFrame, selectMaskOf, subtractLoop,
-    selectPCs, hc1, hc2, hc3, hc4, hc5, hc6, hc7, hc8, hc9, hc10, hc11,
-    hcode, hvalid, hrun,
+    selectExit, selectLoop, addReturned, selectPCs, hc1, hc2, hc3, hc4,
+    hc5, hc6, hc7, hc8, hc9, hc10, hc11, hcode, hvalid, hrun,
     Challenge.EvmProof.Word.succ_ofNat_mod,
     Challenge.EvmProof.Word.word_toNat_ofNat]
-
 
 /-! ### Whole-helper execution certificate -/
 
@@ -3410,6 +2991,34 @@ def gasSteps_subtractLoop (s : State) (dst src take modulus : UInt256)
     gasSteps_subtractIteration s dst src take modulus count i returnDest rest
       hcap hcount hi hcode hfork hrun hnp
 
+def gasSteps_subtractToSelect (s : State) (dst src take modulus : UInt256)
+    (count : Nat) (returnDest : UInt256) (rest : List UInt256)
+    (hcap : rest.length < 1000) (hcode : s.executionEnv.code = submissionBytecode)
+    (hfork : s.fork = .Osaka) (hrun : s.halt = .Running)
+    (hnp : Precompile.isPrecompileWithConfig s.executionEnv.precompileConfig s.executionEnv.fork
+      s.executionEnv.codeAddr = false) :
+    Challenge.EvmProof.GasSteps
+      (subtractLoop s dst src take modulus count count returnDest rest)
+      (selectLoop s dst src take modulus count 0 returnDest rest) := by
+  have hguard := Challenge.EvmProof.Stepper.runLocatedBlock_sound
+    Artifact.submissionArtifact .Osaka subtractGuardPath
+      (by simpa [subtractLoop, Artifact.submissionArtifact] using hcode)
+      (by simpa [subtractLoop, State.fork] using hfork)
+      (run_subtractFinishGuard s dst src take modulus count returnDest rest hcap
+        hcode hrun)
+      (by simpa [subtractLoop] using hrun)
+      (by simpa [subtractLoop, State.fork] using hnp)
+  have htransition := Challenge.EvmProof.Stepper.runLocatedBlock_sound
+    Artifact.submissionArtifact .Osaka subtractToSelectPath
+      (by simpa [subtractLoop, Artifact.submissionArtifact] using hcode)
+      (by simpa [subtractLoop, State.fork] using hfork)
+      (run_subtractToSelect s dst src take modulus count returnDest rest hcap hrun)
+      (by simpa [subtractLoop] using hrun)
+      (by simpa [subtractLoop, State.fork] using hnp)
+  have hzero : (0 : UInt256) = UInt256.ofNat 0 := by decide
+  simpa [selectLoop, selectLoopEntry, selectProgress, hzero] using
+    hguard.trans htransition
+
 def gasSteps_selectIteration (s : State) (dst src take modulus : UInt256)
     (count i : Nat) (returnDest : UInt256) (rest : List UInt256)
     (hcap : rest.length < 1000) (hcount : count < 2 ^ 256) (hi : i < count)
@@ -3451,102 +3060,8 @@ def gasSteps_selectLoop (s : State) (dst src take modulus : UInt256)
   exact Challenge.EvmProof.GasSteps.iterateBounded count fun i hi =>
     gasSteps_selectIteration s dst src take modulus count i returnDest rest
       hcap hcount hi hcode hfork hrun hnp
-/-- The subtract loop's finish guard now exits to the appended trampoline. -/
-def gasSteps_subtractFinish (s : State) (dst src take modulus : UInt256)
-    (count : Nat) (returnDest : UInt256) (rest : List UInt256)
-    (hcap : rest.length < 1000)
-    (hcode : s.executionEnv.code = submissionBytecode) (hfork : s.fork = .Osaka)
-    (hrun : s.halt = .Running)
-    (hnp : Precompile.isPrecompileWithConfig s.executionEnv.precompileConfig s.executionEnv.fork
-      s.executionEnv.codeAddr = false) :
-    Challenge.EvmProof.GasSteps
-      (subtractLoop s dst src take modulus count count returnDest rest)
-      (maskEntry s dst src take modulus count returnDest rest) :=
-  Challenge.EvmProof.Stepper.runLocatedBlock_sound
-    Artifact.submissionArtifact .Osaka subtractGuardPath
-      (by simpa [subtractLoop, Artifact.submissionArtifact] using hcode)
-      (by simpa [subtractLoop, State.fork] using hfork)
-      (run_subtractFinishGuard s dst src take modulus count returnDest rest hcap
-        hcode hrun)
-      (by simpa [subtractLoop] using hrun)
-      (by simpa [subtractLoop, State.fork] using hnp)
 
-/-- The appended trampoline as a single certificate: either it skips the
-selection entirely (mask zero) or it replaces it by one `copyLimbs` (mask all
-ones).  Both ends are `addExitFrame`. -/
-def gasSteps_addMaskSegment (s : State) (dst src take modulus : UInt256)
-    (count : Nat) (returnDest : UInt256) (rest : List UInt256)
-    (hcap : rest.length < 1000) (hcount : count < 2 ^ 256)
-    (hcode : s.executionEnv.code = submissionBytecode) (hfork : s.fork = .Osaka)
-    (hrun : s.halt = .Running)
-    (hnp : Precompile.isPrecompileWithConfig s.executionEnv.precompileConfig s.executionEnv.fork
-      s.executionEnv.codeAddr = false) :
-    Challenge.EvmProof.GasSteps
-      (maskEntry s dst src take modulus count returnDest rest)
-      (addExitFrame s dst src take modulus count returnDest rest) := by
-  by_cases hmask : (selectMaskOf s dst src take modulus count).toNat = 0
-  · have hfall := Challenge.EvmProof.Stepper.runLocatedBlock_sound
-      Artifact.submissionArtifact .Osaka addMaskPath
-        (by simpa [maskEntry, subtractLoop, Artifact.submissionArtifact] using hcode)
-        (by simpa [maskEntry, subtractLoop, State.fork] using hfork)
-        (run_addMaskFall s dst src take modulus count returnDest rest hcap hmask
-          hrun)
-        (by simpa [maskEntry, subtractLoop] using hrun)
-        (by simpa [maskEntry, subtractLoop, State.fork] using hnp)
-    have hskip := Challenge.EvmProof.Stepper.runLocatedBlock_sound
-      Artifact.submissionArtifact .Osaka addSkipPath
-        (by simpa [maskFallthrough, subtractLoop, Artifact.submissionArtifact] using hcode)
-        (by simpa [maskFallthrough, subtractLoop, State.fork] using hfork)
-        (run_addSkip s dst src take modulus count returnDest rest hcap hcode hrun)
-        (by simpa [maskFallthrough, subtractLoop] using hrun)
-        (by simpa [maskFallthrough, subtractLoop, State.fork] using hnp)
-    exact Challenge.EvmProof.GasSteps.cast (hfall.trans hskip) rfl
-      (addExitFrame_of_zero s dst src take modulus count returnDest rest hmask).symm
-  · have hbranch := Challenge.EvmProof.Stepper.runLocatedBlock_sound
-      Artifact.submissionArtifact .Osaka addMaskPath
-        (by simpa [maskEntry, subtractLoop, Artifact.submissionArtifact] using hcode)
-        (by simpa [maskEntry, subtractLoop, State.fork] using hfork)
-        (run_addMaskBranch s dst src take modulus count returnDest rest hcap
-          hmask hcode hrun)
-        (by simpa [maskEntry, subtractLoop] using hrun)
-        (by simpa [maskEntry, subtractLoop, State.fork] using hnp)
-    have hcall := Challenge.EvmProof.Stepper.runLocatedBlock_sound
-      Artifact.submissionArtifact .Osaka addCopyPath
-        (by simpa [maskCopyEntry, subtractLoop, Artifact.submissionArtifact] using hcode)
-        (by simpa [maskCopyEntry, subtractLoop, State.fork] using hfork)
-        (run_addCopyCall s dst src take modulus count returnDest rest hcap hcode
-          hrun)
-        (by simpa [maskCopyEntry, subtractLoop] using hrun)
-        (by simpa [maskCopyEntry, subtractLoop, State.fork] using hnp)
-    have hcopy := gasSteps_copy
-      (maskCopyEntry s dst src take modulus count returnDest rest)
-      dst (UInt256.ofNat 5120) count (UInt256.ofNat 1464)
-      (maskFrame s dst src take modulus count returnDest rest)
-      (by simp [maskFrame]; omega) hcount
-      (by simpa [maskCopyEntry, subtractLoop] using hcode)
-      (by simpa [maskCopyEntry, subtractLoop, State.fork] using hfork)
-      (by simpa [maskCopyEntry, subtractLoop] using hrun)
-      (by simpa [maskCopyEntry, subtractLoop, State.fork] using hnp)
-      (by
-        rw [Challenge.EvmProof.Word.word_toNat_ofNat,
-          Nat.mod_eq_of_lt (by norm_num : 1464 < 2 ^ 256)]
-        exact jump1464)
-    have hret := Challenge.EvmProof.Stepper.runLocatedBlock_sound
-      Artifact.submissionArtifact .Osaka addCopyReturnPath
-        (by simpa [maskCopied, copyReturned, maskCopyEntry, subtractLoop,
-          Artifact.submissionArtifact] using hcode)
-        (by simpa [maskCopied, copyReturned, maskCopyEntry, subtractLoop,
-          State.fork] using hfork)
-        (run_addCopyReturn s dst src take modulus count returnDest rest hcap
-          hcode hrun)
-        (by simpa [maskCopied, copyReturned, maskCopyEntry, subtractLoop] using hrun)
-        (by simpa [maskCopied, copyReturned, maskCopyEntry, subtractLoop,
-          State.fork] using hnp)
-    exact Challenge.EvmProof.GasSteps.cast
-      (hbranch.trans (hcall.trans (hcopy.trans hret))) rfl
-      (addExitFrame_of_pos s dst src take modulus count returnDest rest hmask).symm
-
-def gasSteps_addExit (s : State) (dst src take modulus : UInt256)
+def gasSteps_selectFinish (s : State) (dst src take modulus : UInt256)
     (count : Nat) (returnDest : UInt256) (rest : List UInt256)
     (hcap : rest.length < 1000) (hcode : s.executionEnv.code = submissionBytecode)
     (hfork : s.fork = .Osaka) (hrun : s.halt = .Running)
@@ -3554,16 +3069,24 @@ def gasSteps_addExit (s : State) (dst src take modulus : UInt256)
       s.executionEnv.codeAddr = false)
     (hvalid : Decode.isValidJumpDest submissionBytecode returnDest.toNat = true) :
     Challenge.EvmProof.GasSteps
-      (addExitFrame s dst src take modulus count returnDest rest)
+      (selectLoop s dst src take modulus count count returnDest rest)
       (addReturned s dst src take modulus count returnDest rest) :=
-  Challenge.EvmProof.Stepper.runLocatedBlock_sound
-    Artifact.submissionArtifact .Osaka selectExitPath
-      (by simpa [addExitFrame, subtractLoop, Artifact.submissionArtifact] using hcode)
-      (by simpa [addExitFrame, subtractLoop, State.fork] using hfork)
-      (run_addExit s dst src take modulus count returnDest rest hcap hcode
-        hvalid hrun)
-      (by simpa [addExitFrame, subtractLoop] using hrun)
-      (by simpa [addExitFrame, subtractLoop, State.fork] using hnp)
+  (Challenge.EvmProof.Stepper.runLocatedBlock_sound
+      Artifact.submissionArtifact .Osaka selectGuardPath
+        (by simpa [selectLoop, Artifact.submissionArtifact] using hcode)
+        (by simpa [selectLoop, State.fork] using hfork)
+        (run_selectFinishGuard s dst src take modulus count returnDest rest hcap
+          hcode hrun)
+        (by simpa [selectLoop] using hrun)
+        (by simpa [selectLoop, State.fork] using hnp)).trans
+    (Challenge.EvmProof.Stepper.runLocatedBlock_sound
+      Artifact.submissionArtifact .Osaka selectExitPath
+        (by simpa [selectExit, selectLoop, Artifact.submissionArtifact] using hcode)
+        (by simpa [selectExit, selectLoop, State.fork] using hfork)
+        (run_selectExit s dst src take modulus count returnDest rest hcap hcode
+          hvalid hrun)
+        (by simpa [selectExit, selectLoop] using hrun)
+        (by simpa [selectExit, selectLoop, State.fork] using hnp))
 
 def gasSteps_addMaskedMod (s : State) (dst src take modulus : UInt256)
     (count : Nat) (returnDest : UInt256) (rest : List UInt256)
@@ -3584,13 +3107,12 @@ def gasSteps_addMaskedMod (s : State) (dst src take modulus : UInt256)
     hfork hrun hnp).trans <|
   (gasSteps_subtractLoop s dst src take modulus count returnDest rest hcap hcount
     hcode hfork hrun hnp).trans <|
-  (gasSteps_subtractFinish s dst src take modulus count returnDest rest hcap
+  (gasSteps_subtractToSelect s dst src take modulus count returnDest rest hcap
     hcode hfork hrun hnp).trans <|
-  (gasSteps_addMaskSegment s dst src take modulus count returnDest rest hcap
-    hcount hcode hfork hrun hnp).trans <|
-  gasSteps_addExit s dst src take modulus count returnDest rest hcap hcode
+  (gasSteps_selectLoop s dst src take modulus count returnDest rest hcap hcount
+    hcode hfork hrun hnp).trans <|
+  gasSteps_selectFinish s dst src take modulus count returnDest rest hcap hcode
     hfork hrun hnp hvalid
-
 
 /-! ### Exact gas potential
 
@@ -3794,6 +3316,50 @@ theorem gasSteps_subtractLoop_cost_potential (s : State)
   exact gasSteps_subtractIteration_cost_potential s dst src take modulus count i
     returnDest rest hcap hcount hi hcode hfork hrun hnp
 
+theorem gasSteps_subtractToSelect_cost_potential (s : State)
+    (dst src take modulus : UInt256) (count : Nat) (returnDest : UInt256)
+    (rest : List UInt256) (hcap : rest.length < 1000)
+    (hcode : s.executionEnv.code = submissionBytecode) (hfork : s.fork = .Osaka)
+    (hrun : s.halt = .Running)
+    (hnp : Precompile.isPrecompileWithConfig s.executionEnv.precompileConfig s.executionEnv.fork
+      s.executionEnv.codeAddr = false) :
+    (gasSteps_subtractToSelect s dst src take modulus count returnDest rest hcap
+        hcode hfork hrun hnp).cost + MachineState.memCost
+          (subtractLoop s dst src take modulus count count returnDest rest).activeWords.toNat =
+      48 + MachineState.memCost
+        (selectLoop s dst src take modulus count 0 returnDest rest).activeWords.toNat := by
+  have hguard := Challenge.EvmProof.Meter.runLocatedBlock_cost_potential_of_copyFree
+    subtractGuardPath 26
+      (run_subtractFinishGuard s dst src take modulus count returnDest rest hcap
+        hcode hrun)
+      (by simpa [subtractLoop, State.fork] using hfork)
+      (by decide) (by rfl)
+  have hnext := Challenge.EvmProof.Meter.runLocatedBlock_cost_potential_of_copyFree
+    subtractToSelectPath 22
+      (run_subtractToSelect s dst src take modulus count returnDest rest hcap hrun)
+      (by simpa [subtractLoop, State.fork] using hfork)
+      (by decide) (by rfl)
+  have htrans := Challenge.EvmProof.Meter.gasSteps_trans_cost_potential
+    ((Challenge.EvmProof.Stepper.runLocatedBlock_sound
+      Artifact.submissionArtifact .Osaka subtractGuardPath
+        (by simpa [subtractLoop, Artifact.submissionArtifact] using hcode)
+        (by simpa [subtractLoop, State.fork] using hfork)
+        (run_subtractFinishGuard s dst src take modulus count returnDest rest hcap
+          hcode hrun)
+        (by simpa [subtractLoop] using hrun)
+        (by simpa [subtractLoop, State.fork] using hnp)))
+    ((Challenge.EvmProof.Stepper.runLocatedBlock_sound
+      Artifact.submissionArtifact .Osaka subtractToSelectPath
+        (by simpa [subtractLoop, Artifact.submissionArtifact] using hcode)
+        (by simpa [subtractLoop, State.fork] using hfork)
+        (run_subtractToSelect s dst src take modulus count returnDest rest hcap hrun)
+        (by simpa [subtractLoop] using hrun)
+        (by simpa [subtractLoop, State.fork] using hnp)))
+    26 22 hguard hnext
+  have hzero : (0 : UInt256) = UInt256.ofNat 0 := by decide
+  simpa [gasSteps_subtractToSelect, selectLoop, selectLoopEntry,
+    selectProgress, hzero] using htrans
+
 theorem gasSteps_selectIteration_cost_potential (s : State)
     (dst src take modulus : UInt256) (count i : Nat) (returnDest : UInt256)
     (rest : List UInt256) (hcap : rest.length < 1000)
@@ -3858,4 +3424,82 @@ theorem gasSteps_selectLoop_cost_potential (s : State)
   intro i hi
   exact gasSteps_selectIteration_cost_potential s dst src take modulus count i
     returnDest rest hcap hcount hi hcode hfork hrun hnp
+
+theorem gasSteps_selectFinish_cost_potential (s : State)
+    (dst src take modulus : UInt256) (count : Nat) (returnDest : UInt256)
+    (rest : List UInt256) (hcap : rest.length < 1000)
+    (hcode : s.executionEnv.code = submissionBytecode) (hfork : s.fork = .Osaka)
+    (hrun : s.halt = .Running)
+    (hnp : Precompile.isPrecompileWithConfig s.executionEnv.precompileConfig s.executionEnv.fork
+      s.executionEnv.codeAddr = false)
+    (hvalid : Decode.isValidJumpDest submissionBytecode returnDest.toNat = true) :
+    (gasSteps_selectFinish s dst src take modulus count returnDest rest hcap hcode
+        hfork hrun hnp hvalid).cost + MachineState.memCost
+          (selectLoop s dst src take modulus count count returnDest rest).activeWords.toNat =
+      55 + MachineState.memCost
+        (addReturned s dst src take modulus count returnDest rest).activeWords.toNat := by
+  have hguard := Challenge.EvmProof.Meter.runLocatedBlock_cost_potential_of_copyFree
+    selectGuardPath 26
+      (run_selectFinishGuard s dst src take modulus count returnDest rest hcap
+        hcode hrun)
+      (by simpa [selectLoop, State.fork] using hfork)
+      (by decide) (by rfl)
+  have hexit := Challenge.EvmProof.Meter.runLocatedBlock_cost_potential_of_copyFree
+    selectExitPath 29
+      (run_selectExit s dst src take modulus count returnDest rest hcap hcode
+        hvalid hrun)
+      (by simpa [selectExit, selectLoop, State.fork] using hfork)
+      (by decide) (by rfl)
+  have htrans := Challenge.EvmProof.Meter.gasSteps_trans_cost_potential
+    ((Challenge.EvmProof.Stepper.runLocatedBlock_sound
+      Artifact.submissionArtifact .Osaka selectGuardPath
+        (by simpa [selectLoop, Artifact.submissionArtifact] using hcode)
+        (by simpa [selectLoop, State.fork] using hfork)
+        (run_selectFinishGuard s dst src take modulus count returnDest rest hcap
+          hcode hrun)
+        (by simpa [selectLoop] using hrun)
+        (by simpa [selectLoop, State.fork] using hnp)))
+    ((Challenge.EvmProof.Stepper.runLocatedBlock_sound
+      Artifact.submissionArtifact .Osaka selectExitPath
+        (by simpa [selectExit, selectLoop, Artifact.submissionArtifact] using hcode)
+        (by simpa [selectExit, selectLoop, State.fork] using hfork)
+        (run_selectExit s dst src take modulus count returnDest rest hcap hcode
+          hvalid hrun)
+        (by simpa [selectExit, selectLoop] using hrun)
+        (by simpa [selectExit, selectLoop, State.fork] using hnp)))
+    26 29 hguard hexit
+  simpa [gasSteps_selectFinish] using htrans
+
+theorem gasSteps_addMaskedMod_cost_potential (s : State)
+    (dst src take modulus : UInt256) (count : Nat) (returnDest : UInt256)
+    (rest : List UInt256) (hcap : rest.length < 1000)
+    (hcount : count < 2 ^ 256)
+    (hcode : s.executionEnv.code = submissionBytecode) (hfork : s.fork = .Osaka)
+    (hrun : s.halt = .Running)
+    (hnp : Precompile.isPrecompileWithConfig s.executionEnv.precompileConfig s.executionEnv.fork
+      s.executionEnv.codeAddr = false)
+    (hvalid : Decode.isValidJumpDest submissionBytecode returnDest.toNat = true) :
+    (gasSteps_addMaskedMod s dst src take modulus count returnDest rest hcap
+        hcount hcode hfork hrun hnp hvalid).cost +
+        MachineState.memCost s.activeWords.toNat =
+      (149 + count * 453) + MachineState.memCost
+        (addReturned s dst src take modulus count returnDest rest).activeWords.toNat := by
+  have hsetup := gasSteps_addSetup_cost_potential s dst src take modulus count
+    returnDest rest hcap hcode hfork hrun hnp
+  have hadd := gasSteps_addLoop_cost_potential s dst src take modulus count
+    returnDest rest hcap hcount hcode hfork hrun hnp
+  have haddFinish := gasSteps_addToSubtract_cost_potential s dst src take modulus
+    count returnDest rest hcap hcode hfork hrun hnp
+  have hsub := gasSteps_subtractLoop_cost_potential s dst src take modulus count
+    returnDest rest hcap hcount hcode hfork hrun hnp
+  have hsubFinish := gasSteps_subtractToSelect_cost_potential s dst src take
+    modulus count returnDest rest hcap hcode hfork hrun hnp
+  have hselect := gasSteps_selectLoop_cost_potential s dst src take modulus count
+    returnDest rest hcap hcount hcode hfork hrun hnp
+  have hfinish := gasSteps_selectFinish_cost_potential s dst src take modulus
+    count returnDest rest hcap hcode hfork hrun hnp hvalid
+  unfold gasSteps_addMaskedMod
+  simp only [Challenge.EvmProof.GasSteps.trans_cost]
+  omega
+
 end Challenge.Modexp.Submission.Proofs.Bytecode.BigHelpers

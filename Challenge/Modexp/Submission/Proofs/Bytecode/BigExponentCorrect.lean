@@ -19,6 +19,131 @@ theorem exponentBit_toNat_le_one (byte : UInt256) (j : Nat) :
     show (1 : UInt256).toNat = 1 by decide]
   exact Nat.and_le_right
 
+theorem selectOffset_eq (ptr k : Nat) (hfit : ptr + 32 * k < 2 ^ 256) :
+    (UInt256.ofNat ptr + selectOffset k).toNat = ptr + 32 * k := by
+  rw [selectOffset]
+  have hcomm : UInt256.ofNat ptr +
+      UInt256.shiftLeft (UInt256.ofNat k) (UInt256.ofNat 5) =
+      BigHelpers.clearOffset (UInt256.ofNat ptr) k := by
+    simpa only [BigHelpers.clearOffset] using
+      (Challenge.EvmProof.Word.word_add_comm (UInt256.ofNat ptr)
+        (UInt256.shiftLeft (UInt256.ofNat k) (UInt256.ofNat 5)))
+  rw [hcomm, BigHelpers.clearOffset_toNat ptr k hfit]
+
+theorem selectMemory_zero (memory : ByteArray) (count : Nat)
+    (hcount : count ≤ 32) :
+    selectMemory memory (0 - UInt256.ofNat 0) count =
+      BigHelpers.copyMemory memory (UInt256.ofNat 2048) (UInt256.ofNat 2048)
+        count := by
+  induction count with
+  | zero => rfl
+  | succ count ih =>
+      rw [selectMemory, BigHelpers.copyMemory, ih (by omega)]
+      simp only [selectedWord]
+      have hz : (0 : UInt256) = UInt256.ofNat 0 := by decide
+      rw [hz]
+      rw [WordCorrect.select_zero]
+      have h2048 : (2048 : UInt256) = UInt256.ofNat 2048 := by decide
+      rw [h2048]
+      rw [selectOffset_eq 2048 count (by omega),
+        BigHelpers.clearOffset_toNat 2048 count (by omega)]
+
+theorem selectMemory_one (memory : ByteArray) (count : Nat)
+    (hcount : count ≤ 32) :
+    selectMemory memory (0 - UInt256.ofNat 1) count =
+      BigHelpers.copyMemory memory (UInt256.ofNat 2048) (UInt256.ofNat 3072)
+        count := by
+  induction count with
+  | zero => rfl
+  | succ count ih =>
+      rw [selectMemory, BigHelpers.copyMemory, ih (by omega)]
+      simp only [selectedWord]
+      have hz : (0 : UInt256) = UInt256.ofNat 0 := by decide
+      rw [hz]
+      rw [WordCorrect.select_one]
+      have h2048 : (2048 : UInt256) = UInt256.ofNat 2048 := by decide
+      have h3072 : (3072 : UInt256) = UInt256.ofNat 3072 := by decide
+      rw [h2048, h3072]
+      rw [selectOffset_eq 3072 count (by omega),
+        BigHelpers.clearOffset_toNat 3072 count (by omega),
+        selectOffset_eq 2048 count (by omega),
+        BigHelpers.clearOffset_toNat 2048 count (by omega)]
+
+theorem readWord_copyMemory_self (memory : ByteArray) (ptr count j : Nat)
+    (hj : j < count) (hfit : ptr + 32 * count < 2 ^ 256) :
+    MachineState.readWord
+        (BigHelpers.copyMemory memory (UInt256.ofNat ptr)
+          (UInt256.ofNat ptr) count) (ptr + 32 * j) =
+      MachineState.readWord memory (ptr + 32 * j) := by
+  induction count with
+  | zero => omega
+  | succ count ih =>
+      rw [BigHelpers.copyMemory]
+      by_cases hjlast : j = count
+      · subst j
+        rw [BigHelpers.clearOffset_toNat ptr count (by omega),
+          Challenge.EvmProof.Memory.readWord_writeWord]
+        by_cases hzero : count = 0
+        · subst count
+          rfl
+        · exact BigHelpers.readWord_copyMemory_disjoint_region memory ptr ptr
+            (ptr + 32 * count) count count 0 (by omega) (by omega)
+            (by omega) (Or.inl (by omega))
+      · rw [Challenge.EvmProof.Memory.readWord_writeBytes_disjoint]
+        · exact ih (by omega) (by omega)
+        · left
+          rw [BigHelpers.clearOffset_toNat ptr count (by omega)]
+          omega
+
+theorem copyMemory_self_represents (memory : ByteArray) (ptr count value : Nat)
+    (hfit : ptr + 32 * count < 2 ^ 256)
+    (hrep : Limbs.Represents memory ptr count value) :
+    Limbs.Represents
+      (BigHelpers.copyMemory memory (UInt256.ofNat ptr) (UInt256.ofNat ptr)
+        count) ptr count value := by
+  refine ⟨hrep.1, ?_⟩
+  rw [← hrep.2]
+  unfold Limbs.memoryLimbs
+  apply List.map_congr_left
+  intro j hj
+  exact congrArg UInt256.toNat
+    (readWord_copyMemory_self memory ptr count j (by simpa using hj) hfit)
+
+theorem selectMemory_represents (memory : ByteArray) (byte : UInt256)
+    (j count square product : Nat) (hcount : count ≤ 32)
+    (hsquare : Limbs.Represents memory 2048 count square)
+    (hproduct : Limbs.Represents memory 3072 count product) :
+    Limbs.Represents
+      (selectMemory memory (selectMask byte j) count) 2048 count
+      (if (exponentBit byte j).toNat = 0 then square else product) := by
+  have hbit := exponentBit_toNat_le_one byte j
+  have hword : UInt256.ofNat (exponentBit byte j).toNat =
+      exponentBit byte j := WordCorrect.ofNat_toNat _
+  interval_cases h : (exponentBit byte j).toNat
+  · simp only [if_pos rfl]
+    rw [selectMask, ← hword, selectMemory_zero memory count hcount]
+    exact copyMemory_self_represents memory 2048 count square (by omega) hsquare
+  · rw [selectMask, ← hword, selectMemory_one memory count hcount]
+    exact BigHelpers.copyMemory_represents memory 2048 3072 count product
+      hproduct (by omega) (by omega) (Or.inl (by omega))
+
+theorem selectMemory_preserves_region (memory : ByteArray) (byte : UInt256)
+    (j count ptr value : Nat) (hcount : count ≤ 32)
+    (hptr : 2048 + 32 * count ≤ ptr ∨ ptr + 32 * count ≤ 2048)
+    (hrep : Limbs.Represents memory ptr count value) :
+    Limbs.Represents (selectMemory memory (selectMask byte j) count)
+      ptr count value := by
+  have hbit := exponentBit_toNat_le_one byte j
+  have hword : UInt256.ofNat (exponentBit byte j).toNat =
+      exponentBit byte j := WordCorrect.ofNat_toNat _
+  interval_cases h : (exponentBit byte j).toNat
+  · rw [selectMask, ← hword, selectMemory_zero memory count hcount]
+    exact BigHelpers.represents_copyMemory_disjoint_region memory 2048 2048
+      ptr count value (by omega) hptr hrep
+  · rw [selectMask, ← hword, selectMemory_one memory count hcount]
+    exact BigHelpers.represents_copyMemory_disjoint_region memory 2048 3072
+      ptr count value (by omega) hptr hrep
+
 theorem mulOuterProgress_preserves_region (current : State) (a b : UInt256)
     (count steps ptr value : Nat) (returnDest : UInt256)
     (rest : List UInt256) (hsteps : steps ≤ count) (hcount : count ≤ 32)
@@ -81,7 +206,7 @@ def bitStepValue (modulus : Nat) (byte : UInt256) (j acc base : Nat) : Nat :=
   if (exponentBit byte j).toNat = 0 then square
   else (square * base) % modulus
 
-theorem bitStepProgress_represents_bitStep (s : State)
+theorem selectProgress_represents_bitStep (s : State)
     (accumulatorWord : UInt256) (count b e m baseOff expOff i j : Nat)
     (offset byte : UInt256) (rest : List UInt256) (acc base modulus : Nat)
     (hcount : count ≤ 32) (hmodulusPos : 0 < modulus)
@@ -90,15 +215,15 @@ theorem bitStepProgress_represents_bitStep (s : State)
     (hbase : Limbs.Represents s.memory 1024 count base)
     (hmodulus : Limbs.Represents s.memory 0 count modulus) :
     Limbs.Represents
-        (bitStepProgress s accumulatorWord count b e m baseOff expOff i j offset
-          byte rest).memory 2048 count
+        (selectProgress s accumulatorWord count b e m baseOff expOff i j offset
+          byte rest count).memory 2048 count
         (bitStepValue modulus byte j acc base) ∧
       Limbs.Represents
-        (bitStepProgress s accumulatorWord count b e m baseOff expOff i j offset
-          byte rest).memory 1024 count base ∧
+        (selectProgress s accumulatorWord count b e m baseOff expOff i j offset
+          byte rest count).memory 1024 count base ∧
       Limbs.Represents
-        (bitStepProgress s accumulatorWord count b e m baseOff expOff i j offset
-          byte rest).memory 0 count modulus := by
+        (selectProgress s accumulatorWord count b e m baseOff expOff i j offset
+          byte rest count).memory 0 count modulus := by
   let body := innerBody s accumulatorWord count b e m baseOff expOff i offset
     byte rest j
   let frame := bitFrame accumulatorWord count b e m baseOff expOff i j offset
@@ -107,12 +232,17 @@ theorem bitStepProgress_represents_bitStep (s : State)
     j offset byte rest
   let copied := copiedSquare s accumulatorWord count b e m baseOff expOff i j
     offset byte rest
+  let product := productReturned s accumulatorWord count b e m baseOff expOff i
+    j offset byte rest
   let squareValue := (acc * acc) % modulus
+  let productValue := (squareValue * base) % modulus
   have h0 : (0 : UInt256) = UInt256.ofNat 0 := by decide
+  have h1024 : (1024 : UInt256) = UInt256.ofNat 1024 := by decide
   have h2048 : (2048 : UInt256) = UInt256.ofNat 2048 := by decide
   have h3072 : (3072 : UInt256) = UInt256.ofNat 3072 := by decide
   have h1000 : (1000 : UInt256) = UInt256.ofNat 1000 := by decide
   have h1015 : (1015 : UInt256) = UInt256.ofNat 1015 := by decide
+  have h1034 : (1034 : UInt256) = UInt256.ofNat 1034 := by decide
   have hbodyAcc : Limbs.Represents body.memory 2048 count acc := by
     simpa [body, innerBody, innerLoop] using hacc
   have hbodyBase : Limbs.Represents body.memory 1024 count base := by
@@ -153,67 +283,46 @@ theorem bitStepProgress_represents_bitStep (s : State)
       h1015] using
       BigHelpers.represents_copyMemory_disjoint_region squared.memory 2048
         3072 0 count modulus (by omega) (Or.inr (by omega)) hsquaredModulus
-  by_cases hbit : (exponentBit byte j).toNat = 0
-  · refine ⟨?_, ?_, ?_⟩
-    · simpa [bitStepProgress, hbit, copied, bitStepValue, squareValue] using
-        hcopiedSquare
-    · simpa [bitStepProgress, hbit, copied] using hcopiedBase
-    · simpa [bitStepProgress, hbit, copied] using hcopiedModulus
-  · let tail := bitTailFrame accumulatorWord count b e m baseOff expOff i j
-      offset byte rest
-    let product := bitProductReturned s accumulatorWord count b e m baseOff
-      expOff i j offset byte rest
-    let productValue := (squareValue * base) % modulus
-    have h1024 : (1024 : UInt256) = UInt256.ofNat 1024 := by decide
-    have h1289 : (1289 : UInt256) = UInt256.ofNat 1289 := by decide
-    have h1316 : (1316 : UInt256) = UInt256.ofNat 1316 := by decide
-    have hsquareReduced : squareValue < modulus := Nat.mod_lt _ hmodulusPos
-    have hproduct : Limbs.Represents product.memory 3072 count productValue := by
-      simpa [product, bitProductReturned, mulResult, squareValue, productValue,
-        tail, h0, h1024, h2048, h3072, h1316] using
-        BigMul.mulReturned_represents_product copied 1024 count squareValue base
-          modulus (UInt256.ofNat 1316) tail hcount (by omega) hmodulusPos
-          hsquareReduced hcopiedSquare hcopiedBase hcopiedModulus
-    have hproductBase : Limbs.Represents product.memory 1024 count base := by
-      simpa [product, bitProductReturned, mulResult, squareValue, tail, h0,
-        h1024, h2048, h3072, h1316, BigMul.mulReturned] using
-        (BigMul.mulOuterProgress_afterCopy_represents_product copied 1024 count
-          squareValue base modulus (UInt256.ofNat 1316) tail hcount (by omega)
-          hmodulusPos hsquareReduced hcopiedSquare hcopiedBase
-          hcopiedModulus).2.1
-    have hproductModulus : Limbs.Represents product.memory 0 count modulus := by
-      simpa [product, bitProductReturned, mulResult, squareValue, tail, h0,
-        h1024, h2048, h3072, h1316, BigMul.mulReturned] using
-        (BigMul.mulOuterProgress_afterCopy_represents_product copied 1024 count
-          squareValue base modulus (UInt256.ofNat 1316) tail hcount (by omega)
-          hmodulusPos hsquareReduced hcopiedSquare hcopiedBase
-          hcopiedModulus).2.2
-    have hfinalAcc : Limbs.Represents
-        (bitCopyBack s accumulatorWord count b e m baseOff expOff i j offset
-          byte rest).memory 2048 count productValue := by
-      simpa [bitCopyBack, BigHelpers.copyReturned, product, tail, h2048, h3072,
-        h1289] using
-        BigHelpers.copyMemory_represents product.memory 2048 3072 count
-          productValue hproduct (by omega) (by omega) (Or.inl (by omega))
-    have hfinalBase : Limbs.Represents
-        (bitCopyBack s accumulatorWord count b e m baseOff expOff i j offset
-          byte rest).memory 1024 count base := by
-      simpa [bitCopyBack, BigHelpers.copyReturned, product, tail, h2048, h3072,
-        h1289] using
-        BigHelpers.represents_copyMemory_disjoint_region product.memory 2048
-          3072 1024 count base (by omega) (Or.inr (by omega)) hproductBase
-    have hfinalModulus : Limbs.Represents
-        (bitCopyBack s accumulatorWord count b e m baseOff expOff i j offset
-          byte rest).memory 0 count modulus := by
-      simpa [bitCopyBack, BigHelpers.copyReturned, product, tail, h2048, h3072,
-        h1289] using
-        BigHelpers.represents_copyMemory_disjoint_region product.memory 2048
-          3072 0 count modulus (by omega) (Or.inr (by omega)) hproductModulus
-    refine ⟨?_, ?_, ?_⟩
-    · simpa [bitStepProgress, hbit, bitStepValue, squareValue, productValue]
-        using hfinalAcc
-    · simpa [bitStepProgress, hbit] using hfinalBase
-    · simpa [bitStepProgress, hbit] using hfinalModulus
+  have hsquareReduced : squareValue < modulus := Nat.mod_lt _ hmodulusPos
+  have hproduct : Limbs.Represents product.memory 3072 count productValue := by
+    simpa [product, productReturned, mulResult, squareValue, productValue,
+      frame, h0, h1024, h2048, h3072, h1034] using
+      BigMul.mulReturned_represents_product copied 1024 count squareValue base
+        modulus (UInt256.ofNat 1034) frame hcount (by omega) hmodulusPos
+        hsquareReduced hcopiedSquare hcopiedBase hcopiedModulus
+  have hproductBase : Limbs.Represents product.memory 1024 count base := by
+    simpa [product, productReturned, mulResult, squareValue, frame, h0, h1024,
+      h2048, h3072, h1034, BigMul.mulReturned] using
+      (BigMul.mulOuterProgress_afterCopy_represents_product copied 1024 count
+        squareValue base modulus (UInt256.ofNat 1034) frame hcount (by omega)
+        hmodulusPos hsquareReduced hcopiedSquare hcopiedBase
+        hcopiedModulus).2.1
+  have hproductModulus : Limbs.Represents product.memory 0 count modulus := by
+    simpa [product, productReturned, mulResult, squareValue, frame, h0, h1024,
+      h2048, h3072, h1034, BigMul.mulReturned] using
+      (BigMul.mulOuterProgress_afterCopy_represents_product copied 1024 count
+        squareValue base modulus (UInt256.ofNat 1034) frame hcount (by omega)
+        hmodulusPos hsquareReduced hcopiedSquare hcopiedBase
+        hcopiedModulus).2.2
+  have hselected := selectMemory_represents product.memory byte j count
+    squareValue productValue hcount
+    (by
+      simpa [product, productReturned, squareValue, frame, h0, h1024, h2048,
+        h3072, h1034] using
+        mulResult_preserves_region copied (UInt256.ofNat 2048)
+          (UInt256.ofNat 1024) count 2048 squareValue (UInt256.ofNat 1034)
+          frame hcount (Or.inr (by omega)) (Or.inr (by omega))
+          (Or.inl (by omega)) hcopiedSquare)
+    hproduct
+  have hselectedBase := selectMemory_preserves_region product.memory byte j
+    count 1024 base hcount (Or.inr (by omega)) hproductBase
+  have hselectedModulus := selectMemory_preserves_region product.memory byte j
+    count 0 modulus hcount (Or.inr (by omega)) hproductModulus
+  exact ⟨by
+    simpa [selectProgress, product, bitStepValue, squareValue, productValue]
+      using hselected,
+    by simpa [selectProgress, product] using hselectedBase,
+    by simpa [selectProgress, product] using hselectedModulus⟩
 
 theorem exponentBit_toNat_eq (byte : UInt256) (j : Nat) (hj : j < 8) :
     (exponentBit byte j).toNat = WordCorrect.exponentBitNat byte j := by
@@ -255,7 +364,7 @@ theorem exponentBitProgress_represents (s : State)
       have hbeforeReduced : beforeValue < modulus :=
         WordCorrect.natBitAfter_lt modulus byte base acc steps hmodulusPos
           haccReduced
-      have hstep := bitStepProgress_represents_bitStep before accumulatorWord
+      have hstep := selectProgress_represents_bitStep before accumulatorWord
         count b e m baseOff expOff i steps offset byte rest beforeValue base
         modulus hcount hmodulusPos hbeforeReduced hbefore.1 hbefore.2.1
         hbefore.2.2
@@ -399,401 +508,5 @@ theorem exponentValueAfter_header_eq (input : ByteArray)
     (exponentSize input) acc hoff]
   exact WordCorrect.natExpAfter_eq input modulus base acc
     (exponentSize input) hvalid (by omega) hacc
-
-
-section ColdPath
-set_option linter.unusedVariables false
-
-/-! ## S2 cold path: functional correctness -/
-
-/-- `(1 % m) ^ N % m = 1 % m`, uniformly in `m` (including `m = 1`). -/
-theorem oneMod_pow (modulus N : Nat) :
-    (1 % modulus) ^ N % modulus = 1 % modulus := by
-  rw [← Nat.pow_mod, Nat.one_pow]
-
-/-- Leading zero bits leave the accumulator at `1 % modulus`. -/
-theorem natBitAfter_of_zero_prefix (modulus : Nat) (byte : UInt256)
-    (base j0 : Nat) (hmodulusPos : 0 < modulus)
-    (hz : ∀ t, t < j0 → WordCorrect.exponentBitNat byte t = 0) :
-    WordCorrect.natBitAfter modulus byte base j0 (1 % modulus) = 1 % modulus := by
-  have hacc : 1 % modulus < modulus := Nat.mod_lt _ hmodulusPos
-  rw [WordCorrect.natBitAfter_eq modulus byte base (1 % modulus) j0 hacc,
-    BigExponent.bitPrefix_eq_zero byte j0 hz, Nat.pow_zero, Nat.mul_one,
-    oneMod_pow]
-
-/-- With `acc = 1 % modulus` and a set bit at `j`, one step yields `base`. -/
-theorem natBitAfter_succ_of_zero_prefix (modulus : Nat) (byte : UInt256)
-    (base j : Nat) (hmodulusPos : 0 < modulus) (hbaseReduced : base < modulus)
-    (hj : j < 8)
-    (hzeros : ∀ t, t < j → (BigExponent.exponentBit byte t).toNat = 0)
-    (hhit : ¬ (BigExponent.exponentBit byte j).toNat = 0) :
-    WordCorrect.natBitAfter modulus byte base (j + 1) (1 % modulus) = base := by
-  have hzero := natBitAfter_of_zero_prefix modulus byte base j hmodulusPos
-    (by
-      intro t ht
-      rw [← BigExponent.exponentBit_toNat_eq_bitNat _ t (by omega)]
-      exact hzeros t ht)
-  rw [WordCorrect.natBitAfter, hzero, WordCorrect.natBitStep]
-  have hbit : ¬ WordCorrect.exponentBitNat byte j = 0 := by
-    rw [← BigExponent.exponentBit_toNat_eq_bitNat byte j hj]
-    exact hhit
-  rw [if_neg hbit]
-  have hsq : (1 % modulus) * (1 % modulus) % modulus = 1 % modulus := by
-    rw [← Nat.mul_mod, Nat.one_mul]
-  rw [hsq, WordCorrect.left_mod_mul, Nat.one_mul,
-    Nat.mod_eq_of_lt hbaseReduced]
-
-/-- A zero exponent byte leaves the accumulator at `1 % modulus`. -/
-theorem natExpStep_of_zero_byte (modulus : Nat) (byte : UInt256) (base : Nat)
-    (hmodulusPos : 0 < modulus) (hbyte : byte.toNat = 0) :
-    WordCorrect.natExpStep modulus byte (1 % modulus) base = 1 % modulus := by
-  have hacc : 1 % modulus < modulus := Nat.mod_lt _ hmodulusPos
-  have hlt : byte.toNat < 256 := by omega
-  rw [← natBitAfter_eight_eq_natExpStep modulus byte (1 % modulus) base hacc
-      hlt,
-    WordCorrect.natBitAfter_eq modulus byte base (1 % modulus) 8 hacc,
-    WordCorrect.bitPrefix_eight byte hlt, hbyte, Nat.pow_zero, Nat.mul_one,
-    oneMod_pow]
-
-/-- A zero exponent-byte prefix leaves the accumulator at `1 % modulus`. -/
-theorem exponentValueAfter_of_zero_prefix (s : State)
-    (modulus base expOff k : Nat) (hmodulusPos : 0 < modulus)
-    (hz : ∀ t, t < k → (loadedExponentByte s expOff t).toNat = 0) :
-    exponentValueAfter s modulus base expOff k (1 % modulus) = 1 % modulus := by
-  induction k with
-  | zero => rfl
-  | succ k ih =>
-      rw [exponentValueAfter, ih (fun t ht => hz t (by omega))]
-      exact natExpStep_of_zero_byte modulus (loadedExponentByte s expOff k) base
-        hmodulusPos (hz k (by omega))
-
-/-! ### Shifted value recursions -/
-
-def natBitFrom (modulus : Nat) (byte : UInt256) (base start acc : Nat) :
-    Nat → Nat
-  | 0 => acc
-  | t + 1 =>
-      WordCorrect.natBitStep modulus byte (start + t)
-        (natBitFrom modulus byte base start acc t) base
-
-theorem natBitFrom_lt (modulus : Nat) (byte : UInt256) (base start acc t : Nat)
-    (hmodulusPos : 0 < modulus) (hacc : acc < modulus) :
-    natBitFrom modulus byte base start acc t < modulus := by
-  induction t with
-  | zero => exact hacc
-  | succ t _ =>
-      rw [natBitFrom]
-      exact WordCorrect.natBitStep_lt modulus byte (start + t) _ base
-        hmodulusPos
-
-theorem natBitAfter_split (modulus : Nat) (byte : UInt256)
-    (base a t acc : Nat) :
-    WordCorrect.natBitAfter modulus byte base (a + t) acc =
-      natBitFrom modulus byte base a
-        (WordCorrect.natBitAfter modulus byte base a acc) t := by
-  induction t with
-  | zero => rfl
-  | succ t ih =>
-      rw [show a + (t + 1) = (a + t) + 1 from by omega,
-        WordCorrect.natBitAfter, ih, natBitFrom]
-
-def expValueFrom (s : State) (modulus base expOff start acc : Nat) :
-    Nat → Nat
-  | 0 => acc
-  | t + 1 =>
-      WordCorrect.natExpStep modulus (loadedExponentByte s expOff (start + t))
-        (expValueFrom s modulus base expOff start acc t) base
-
-theorem expValueFrom_lt (s : State) (modulus base expOff start acc t : Nat)
-    (hmodulusPos : 0 < modulus) (hacc : acc < modulus) :
-    expValueFrom s modulus base expOff start acc t < modulus := by
-  induction t with
-  | zero => exact hacc
-  | succ t _ =>
-      rw [expValueFrom, WordCorrect.natExpStep]
-      exact Nat.mod_lt _ hmodulusPos
-
-theorem expValueFrom_executionEnv (s t : State)
-    (modulus base expOff start acc steps : Nat)
-    (henv : s.executionEnv = t.executionEnv) :
-    expValueFrom s modulus base expOff start acc steps =
-      expValueFrom t modulus base expOff start acc steps := by
-  induction steps with
-  | zero => rfl
-  | succ steps ih =>
-      have hbyte : loadedExponentByte s expOff (start + steps) =
-          loadedExponentByte t expOff (start + steps) := by
-        unfold loadedExponentByte
-        rw [henv]
-      rw [expValueFrom, expValueFrom, ih, hbyte]
-
-theorem exponentValueAfter_split (s : State) (modulus base expOff a t acc : Nat) :
-    exponentValueAfter s modulus base expOff (a + t) acc =
-      expValueFrom s modulus base expOff a
-        (exponentValueAfter s modulus base expOff a acc) t := by
-  induction t with
-  | zero => rfl
-  | succ t ih =>
-      rw [show a + (t + 1) = (a + t) + 1 from by omega, exponentValueAfter, ih,
-        expValueFrom]
-
-/-! ### Shifted progress functions preserve the limb invariants -/
-
-theorem bitProgressFrom_represents (s : State) (accumulatorWord : UInt256)
-    (count b e m baseOff expOff i : Nat) (offset byte : UInt256)
-    (rest : List UInt256) (start steps acc base modulus : Nat)
-    (hsteps : start + steps ≤ 8) (hcount : count ≤ 32)
-    (hmodulusPos : 0 < modulus) (haccReduced : acc < modulus)
-    (hacc : Limbs.Represents s.memory 2048 count acc)
-    (hbase : Limbs.Represents s.memory 1024 count base)
-    (hmodulus : Limbs.Represents s.memory 0 count modulus) :
-    let progress := BigExponent.bitProgressFrom s accumulatorWord count b e m
-      baseOff expOff i offset byte rest start steps
-    Limbs.Represents progress.memory 2048 count
-        (natBitFrom modulus byte base start acc steps) ∧
-      Limbs.Represents progress.memory 1024 count base ∧
-      Limbs.Represents progress.memory 0 count modulus := by
-  induction steps with
-  | zero => exact ⟨hacc, hbase, hmodulus⟩
-  | succ steps ih =>
-      let before := BigExponent.bitProgressFrom s accumulatorWord count b e m
-        baseOff expOff i offset byte rest start steps
-      let beforeValue := natBitFrom modulus byte base start acc steps
-      have hbefore := ih (by omega)
-      have hbeforeReduced : beforeValue < modulus :=
-        natBitFrom_lt modulus byte base start acc steps hmodulusPos haccReduced
-      have hstep := bitStepProgress_represents_bitStep before accumulatorWord
-        count b e m baseOff expOff i (start + steps) offset byte rest
-        beforeValue base modulus hcount hmodulusPos hbeforeReduced hbefore.1
-        hbefore.2.1 hbefore.2.2
-      simpa [BigExponent.bitProgressFrom, before, beforeValue, natBitFrom,
-        bitStepValue_eq_natBitStep modulus byte (start + steps) beforeValue base
-          (by omega)] using hstep
-
-theorem byteProgressFrom_represents (s : State) (accumulatorWord : UInt256)
-    (count b e m baseOff expOff : Nat) (rest : List UInt256)
-    (start steps acc base modulus : Nat) (hcount : count ≤ 32)
-    (hmodulusPos : 0 < modulus) (haccReduced : acc < modulus)
-    (hacc : Limbs.Represents s.memory 2048 count acc)
-    (hbase : Limbs.Represents s.memory 1024 count base)
-    (hmodulus : Limbs.Represents s.memory 0 count modulus) :
-    let progress := BigExponent.byteProgressFrom s accumulatorWord count b e m
-      baseOff expOff rest start steps
-    Limbs.Represents progress.memory 2048 count
-        (expValueFrom s modulus base expOff start acc steps) ∧
-      Limbs.Represents progress.memory 1024 count base ∧
-      Limbs.Represents progress.memory 0 count modulus := by
-  induction steps with
-  | zero => exact ⟨hacc, hbase, hmodulus⟩
-  | succ steps ih =>
-      let before := BigExponent.byteProgressFrom s accumulatorWord count b e m
-        baseOff expOff rest start steps
-      let beforeValue := expValueFrom s modulus base expOff start acc steps
-      let offset := UInt256.ofNat (expOff + (start + steps))
-      let byte := loadedExponentByte before expOff (start + steps)
-      have hbefore := ih
-      have hbeforeReduced : beforeValue < modulus :=
-        expValueFrom_lt s modulus base expOff start acc steps hmodulusPos
-          haccReduced
-      have hbyteEnv : before.executionEnv = s.executionEnv :=
-        BigExponent.byteProgressFrom_executionEnv s accumulatorWord count b e m
-          baseOff expOff start steps rest
-      have hbyte : byte = loadedExponentByte s expOff (start + steps) := by
-        simp only [byte, loadedExponentByte]
-        rw [hbyteEnv]
-      have hbits := exponentBitProgress_represents before accumulatorWord count
-        b e m baseOff expOff (start + steps) offset byte rest 8 beforeValue base
-        modulus (by omega) hcount hmodulusPos hbeforeReduced hbefore.1
-        hbefore.2.1 hbefore.2.2
-      have hbyteLt : byte.toNat < 256 := by
-        rw [hbyte]
-        exact loadedExponentByte_lt s expOff (start + steps)
-      have hstepEq := natBitAfter_eight_eq_natExpStep modulus byte beforeValue
-        base hbeforeReduced hbyteLt
-      rw [hstepEq] at hbits
-      simpa [BigExponent.byteProgressFrom, before, beforeValue, offset, byte,
-        expValueFrom, hbyte] using hbits
-/-- S2b: the first set bit copies `base` into the accumulator, which is exactly
-the value the two skipped multiplications would have produced. -/
-theorem coldPhaseHit_represents (s : State) (accumulatorWord : UInt256)
-    (count b e m baseOff expOff : Nat) (rest : List UInt256)
-    (base modulus : Nat) (hcount : count ≤ 32) (hmodulusPos : 0 < modulus)
-    (hbaseReduced : base < modulus)
-    (hklt' : BigExponent.coldByteIndex s expOff e < e)
-    (hacc : Limbs.Represents s.memory 2048 count (1 % modulus))
-    (hbase : Limbs.Represents s.memory 1024 count base)
-    (hmodulus : Limbs.Represents s.memory 0 count modulus) :
-    Limbs.Represents
-      (BigExponent.coldPhaseHit s accumulatorWord count b e m baseOff expOff
-        rest).memory 2048 count
-      (WordCorrect.natBitAfter modulus (BigExponent.coldPhaseByte s expOff e)
-        base (BigExponent.coldPhaseStart s expOff e) (1 % modulus)) ∧
-    Limbs.Represents
-      (BigExponent.coldPhaseHit s accumulatorWord count b e m baseOff expOff
-        rest).memory 1024 count base ∧
-    Limbs.Represents
-      (BigExponent.coldPhaseHit s accumulatorWord count b e m baseOff expOff
-        rest).memory 0 count modulus := by
-  have h1024 : (1024 : UInt256) = UInt256.ofNat 1024 := by decide
-  have h2048 : (2048 : UInt256) = UInt256.ofNat 2048 := by decide
-  have hj0 : BigExponent.coldPhaseBit s expOff e < 8 :=
-    BigExponent.coldBitIndex_lt (BigExponent.coldPhaseByte s expOff e)
-      (by
-        simpa [BigExponent.coldPhaseByte] using
-          BigExponent.loadedExponentByte_lt256 s expOff
-            (BigExponent.coldByteIndex s expOff e))
-      (by
-        simpa [BigExponent.coldPhaseByte] using
-          BigExponent.coldByteIndex_hit s expOff e hklt')
-  have hvalue := natBitAfter_succ_of_zero_prefix modulus
-    (BigExponent.coldPhaseByte s expOff e) base
-    (BigExponent.coldPhaseBit s expOff e) hmodulusPos hbaseReduced hj0
-    (fun t ht =>
-      BigExponent.coldBitIndex_zeros (BigExponent.coldPhaseByte s expOff e) t
-        (by simpa [BigExponent.coldPhaseBit] using ht))
-    (by
-      have hne := BigExponent.coldBitIndex_hit
-        (BigExponent.coldPhaseByte s expOff e)
-        (by simpa [BigExponent.coldPhaseBit] using hj0)
-      simpa [BigExponent.coldPhaseBit] using hne)
-  refine ⟨?_, ?_, ?_⟩
-  · rw [show BigExponent.coldPhaseStart s expOff e =
-        BigExponent.coldPhaseBit s expOff e + 1 from rfl, hvalue]
-    simpa [BigExponent.coldPhaseHit, BigExponent.coldCopied,
-      BigHelpers.copyReturned, BigExponent.coldCopyState,
-      BigExponent.coldBitLoop, h1024, h2048] using
-      BigHelpers.copyMemory_represents s.memory 2048 1024 count base hbase
-        (by omega) (by omega) (Or.inr (by omega))
-  · simpa [BigExponent.coldPhaseHit, BigExponent.coldCopied,
-      BigHelpers.copyReturned, BigExponent.coldCopyState,
-      BigExponent.coldBitLoop, h1024, h2048] using
-      BigHelpers.represents_copyMemory_disjoint_region s.memory 2048 1024 1024
-        count base (by omega) (Or.inr (by omega)) hbase
-  · simpa [BigExponent.coldPhaseHit, BigExponent.coldCopied,
-      BigHelpers.copyReturned, BigExponent.coldCopyState,
-      BigExponent.coldBitLoop, h1024, h2048] using
-      BigHelpers.represents_copyMemory_disjoint_region s.memory 2048 1024 0
-        count modulus (by omega) (Or.inr (by omega)) hmodulus
-
-/-- End-to-end value of the exponent phase, cold prefix included. -/
-theorem exponentPhase_represents (s : State) (accumulatorWord : UInt256)
-    (count b e m baseOff expOff : Nat) (rest : List UInt256)
-    (base modulus : Nat) (hcount : count ≤ 32) (hmodulusPos : 0 < modulus)
-    (hbaseReduced : base < modulus)
-    (hacc : Limbs.Represents s.memory 2048 count (1 % modulus))
-    (hbase : Limbs.Represents s.memory 1024 count base)
-    (hmodulus : Limbs.Represents s.memory 0 count modulus) :
-    Limbs.Represents
-      (BigExponent.exponentPhaseState s accumulatorWord count b e m baseOff
-        expOff rest).memory 2048 count
-      (exponentValueAfter s modulus base expOff e (1 % modulus)) := by
-  have hkle : BigExponent.coldByteIndex s expOff e ≤ e :=
-    BigExponent.coldByteIndex_le s expOff e
-  by_cases hk : BigExponent.coldByteIndex s expOff e = e
-  · have hval : exponentValueAfter s modulus base expOff e (1 % modulus) =
-        1 % modulus :=
-      exponentValueAfter_of_zero_prefix s modulus base expOff e hmodulusPos
-        (fun t ht => BigExponent.coldByteIndex_zeros s expOff e t (by omega))
-    rw [hval]
-    simpa [BigExponent.exponentPhaseState, hk] using hacc
-  · have hklt' : BigExponent.coldByteIndex s expOff e < e := by omega
-    have hprefix : exponentValueAfter s modulus base expOff
-        (BigExponent.coldByteIndex s expOff e) (1 % modulus) = 1 % modulus :=
-      exponentValueAfter_of_zero_prefix s modulus base expOff
-        (BigExponent.coldByteIndex s expOff e) hmodulusPos
-        (fun t ht => BigExponent.coldByteIndex_zeros s expOff e t ht)
-    have hstartLe : BigExponent.coldPhaseStart s expOff e ≤ 8 := by
-      have hj0 : BigExponent.coldPhaseBit s expOff e < 8 :=
-        BigExponent.coldBitIndex_lt (BigExponent.coldPhaseByte s expOff e)
-          (by
-            simpa [BigExponent.coldPhaseByte] using
-              BigExponent.loadedExponentByte_lt256 s expOff
-                (BigExponent.coldByteIndex s expOff e))
-          (by
-            simpa [BigExponent.coldPhaseByte] using
-              BigExponent.coldByteIndex_hit s expOff e hklt')
-      simp only [BigExponent.coldPhaseStart]
-      omega
-    have hhit := coldPhaseHit_represents s accumulatorWord count b e m baseOff
-      expOff rest base modulus hcount hmodulusPos hbaseReduced hklt' hacc hbase
-      hmodulus
-    have hbitsRep := bitProgressFrom_represents
-      (BigExponent.coldPhaseHit s accumulatorWord count b e m baseOff expOff
-        rest)
-      accumulatorWord count b e m baseOff expOff
-      (BigExponent.coldByteIndex s expOff e)
-      (BigExponent.coldPhaseOffset s expOff e)
-      (BigExponent.coldPhaseByte s expOff e) rest
-      (BigExponent.coldPhaseStart s expOff e)
-      (8 - BigExponent.coldPhaseStart s expOff e)
-      (WordCorrect.natBitAfter modulus (BigExponent.coldPhaseByte s expOff e)
-        base (BigExponent.coldPhaseStart s expOff e) (1 % modulus))
-      base modulus (by omega) hcount hmodulusPos
-      (WordCorrect.natBitAfter_lt modulus _ base (1 % modulus) _ hmodulusPos
-        (Nat.mod_lt _ hmodulusPos))
-      hhit.1 hhit.2.1 hhit.2.2
-    have hsplit : natBitFrom modulus (BigExponent.coldPhaseByte s expOff e) base
-        (BigExponent.coldPhaseStart s expOff e)
-        (WordCorrect.natBitAfter modulus (BigExponent.coldPhaseByte s expOff e)
-          base (BigExponent.coldPhaseStart s expOff e) (1 % modulus))
-        (8 - BigExponent.coldPhaseStart s expOff e) =
-        WordCorrect.natBitAfter modulus (BigExponent.coldPhaseByte s expOff e)
-          base 8 (1 % modulus) := by
-      rw [← natBitAfter_split]
-      rw [show BigExponent.coldPhaseStart s expOff e +
-        (8 - BigExponent.coldPhaseStart s expOff e) = 8 from by omega]
-    have hbyteVal : exponentValueAfter s modulus base expOff
-        (BigExponent.coldByteIndex s expOff e + 1) (1 % modulus) =
-        WordCorrect.natBitAfter modulus (BigExponent.coldPhaseByte s expOff e)
-          base 8 (1 % modulus) := by
-      rw [natBitAfter_eight_eq_natExpStep modulus
-          (BigExponent.coldPhaseByte s expOff e) (1 % modulus) base
-          (Nat.mod_lt _ hmodulusPos)
-          (by
-            simpa [BigExponent.coldPhaseByte] using
-              BigExponent.loadedExponentByte_lt256 s expOff
-                (BigExponent.coldByteIndex s expOff e)),
-        exponentValueAfter, hprefix]
-      rfl
-    have hbytesRep := byteProgressFrom_represents
-      (BigExponent.coldPhaseBits s accumulatorWord count b e m baseOff expOff
-        rest)
-      accumulatorWord count b e m baseOff expOff rest
-      (BigExponent.coldByteIndex s expOff e + 1)
-      (e - (BigExponent.coldByteIndex s expOff e + 1))
-      (exponentValueAfter s modulus base expOff
-        (BigExponent.coldByteIndex s expOff e + 1) (1 % modulus))
-      base modulus hcount hmodulusPos
-      (exponentValueAfter_lt s modulus base expOff _ (1 % modulus) hmodulusPos
-        (Nat.mod_lt _ hmodulusPos))
-      (by
-        rw [hbyteVal, ← hsplit]
-        simpa [BigExponent.coldPhaseBits, BigExponent.bitFinalFrom] using
-          hbitsRep.1)
-      (by
-        simpa [BigExponent.coldPhaseBits, BigExponent.bitFinalFrom] using
-          hbitsRep.2.1)
-      (by
-        simpa [BigExponent.coldPhaseBits, BigExponent.bitFinalFrom] using
-          hbitsRep.2.2)
-    have henv : (BigExponent.coldPhaseBits s accumulatorWord count b e m baseOff
-        expOff rest).executionEnv = s.executionEnv := by simp
-    have htail : exponentValueAfter s modulus base expOff e (1 % modulus) =
-        expValueFrom
-          (BigExponent.coldPhaseBits s accumulatorWord count b e m baseOff
-            expOff rest)
-          modulus base expOff (BigExponent.coldByteIndex s expOff e + 1)
-          (exponentValueAfter s modulus base expOff
-            (BigExponent.coldByteIndex s expOff e + 1) (1 % modulus))
-          (e - (BigExponent.coldByteIndex s expOff e + 1)) := by
-      rw [expValueFrom_executionEnv _ s _ _ _ _ _ _ henv,
-        ← exponentValueAfter_split]
-      rw [show BigExponent.coldByteIndex s expOff e + 1 +
-        (e - (BigExponent.coldByteIndex s expOff e + 1)) = e from by omega]
-    rw [htail]
-    simpa [BigExponent.exponentPhaseState, hk, BigExponent.coldPhaseTail,
-      BigExponent.byteFinalFrom] using hbytesRep.1
-
-end ColdPath
 
 end Challenge.Modexp.Submission.Proofs.Bytecode.BigExponentCorrect

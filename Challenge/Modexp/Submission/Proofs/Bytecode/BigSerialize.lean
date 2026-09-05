@@ -596,32 +596,4 @@ theorem gasSteps_serializeResult_cost_potential (s : State)
     bigReturned] at hguard hentry hloop hfinish ⊢
   omega
 
-
-/-- The serializer starting from the shared `pc = 1118` entry state, i.e. the
-tail of `gasSteps_serializeResult` without the hot outer-loop guard.  The S2
-cold path reaches this state directly. -/
-def gasSteps_serializeFromEntry (s : State) (accumulatorWord : UInt256)
-    (count b e m baseOff expOff : Nat) (rest : List UInt256)
-    (hcap : rest.length < 968) (hm : m < 2 ^ 256)
-    (hcode : s.executionEnv.code = submissionBytecode)
-    (hfork : s.fork = .Osaka) (hrun : s.halt = .Running)
-    (hnp : Precompile.isPrecompileWithConfig s.executionEnv.precompileConfig s.executionEnv.fork
-      s.executionEnv.codeAddr = false) :
-    Challenge.EvmProof.GasSteps
-      (serializerEntry s accumulatorWord count b e m baseOff expOff rest)
-      (bigReturned s accumulatorWord count b e m baseOff expOff rest) := by
-  have hentry := Challenge.EvmProof.Stepper.runLocatedBlock_sound
-    Artifact.submissionArtifact .Osaka serializerEntryPath
-      (by simpa [serializerEntry, Artifact.submissionArtifact] using hcode)
-      (by simpa [serializerEntry, State.fork] using hfork)
-      (run_serializerEntry s accumulatorWord count b e m baseOff expOff rest
-        (by omega) hrun)
-      (by simpa [serializerEntry] using hrun)
-      (by simpa [serializerEntry, State.fork] using hnp)
-  have hloop := gasSteps_serializerLoop s accumulatorWord count b e m baseOff
-    expOff rest hcap hm hcode hfork hrun hnp
-  have hfinish := gasSteps_serializerFinish s accumulatorWord count b e m
-    baseOff expOff rest hcap hm hcode hfork hrun hnp
-  exact hentry.trans (hloop.trans hfinish)
-
 end Challenge.Modexp.Submission.Proofs.Bytecode.BigSerialize

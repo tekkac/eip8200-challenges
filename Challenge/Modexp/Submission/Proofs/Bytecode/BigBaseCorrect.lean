@@ -137,21 +137,8 @@ theorem bitProgress_represents (s : State) (count : Nat) (byte : UInt256)
             congr 2
             omega
       rw [hvalue] at hafter
-      by_cases hbit0 : (baseBit byte steps).toNat = 0
-      · -- zero base bit: `T2` skipped the masked add, the destination still
-        -- holds the doubled value, which is exactly `baseBitStep` here.
-        have htwice : 2 * beforeValue = beforeValue + beforeValue := by omega
-        have hvalue0 : baseBitStep modulus byte steps beforeValue =
-            (beforeValue + beforeValue) % modulus := by
-          rw [baseBitStep, hbit0, Nat.add_zero, htwice]
-        have hres : Limbs.Represents doubled.memory 1024 count
-            (baseBitStep modulus byte steps beforeValue) := by
-          rw [hvalue0]
-          exact hdoubled
-        simpa [bitProgress, bitAfterAdd, bitChoice, before, doubled, beforeValue,
-          baseBitAfter, hbit0] using ⟨hres, hdoubledOne, hdoubledModulus⟩
-      · simpa [bitProgress, bitAfterAdd, bitChoice, before, doubled, after, beforeValue,
-          baseBitAfter, hbit0] using ⟨hafter, hafterOne, hafterModulus⟩
+      simpa [bitProgress, before, doubled, after, beforeValue,
+        baseBitAfter] using ⟨hafter, hafterOne, hafterModulus⟩
 
 theorem bitProgress_preserves_2048 (s : State) (count : Nat)
     (byte : UInt256) (steps value : Nat) (hsteps : steps ≤ 8)
@@ -190,11 +177,7 @@ theorem bitProgress_preserves_2048 (s : State) (count : Nat)
         exact BigHelpers.addReturned_preserves_region doubled 1024 3072
           bit 0 2048 count value (UInt256.ofNat 900) [] (by omega) (by omega)
           (Or.inl (by omega)) (Or.inl (by omega)) hdoubled
-      by_cases hbit0 : (baseBit byte steps).toNat = 0
-      · simpa [bitProgress, bitAfterAdd, bitChoice, before, doubled,
-          hbit0] using hdoubled
-      · simpa [bitProgress, bitAfterAdd, bitChoice, before, doubled, after,
-          hbit0] using hafter
+      simpa [bitProgress, before, doubled, after] using hafter
 
 theorem baseBitAfter_eq (modulus : Nat) (byte : UInt256) (steps acc : Nat)
     (hsteps : steps ≤ 8) (hacc : acc < modulus) :
@@ -547,7 +530,7 @@ theorem initialAccumulator_represents (s : State) (accumulator : UInt256)
   have h1 : (1 : UInt256) = UInt256.ofNat 1 := by decide
   have h2048 : (2048 : UInt256) = UInt256.ofNat 2048 := by decide
   have h3072 : (3072 : UInt256) = UInt256.ofNat 3072 := by decide
-  have hColdEntry : (1343 : UInt256) = UInt256.ofNat 1343 := by decide
+  have h944 : (944 : UInt256) = UInt256.ofNat 944 := by decide
   have hprogress := baseProgress_represents s count baseOff baseSize
     modulusValue hcount hmodulusPos hzero hone hmodulus
   have hprogressZero := baseProgress_preserves_2048 s count baseOff baseSize 0
@@ -568,9 +551,9 @@ theorem initialAccumulator_represents (s : State) (accumulator : UInt256)
       (BigBaseLoop.initialAccumulator s accumulator count baseSize e m baseOff
         rest).memory 2048 count (1 % modulusValue) := by
     simpa [BigBaseLoop.initialAccumulator, helperRest, exit, h0, h1, h2048,
-      h3072, hColdEntry] using
+      h3072, h944] using
       BigHelpers.addReturned_represents_mod exit 2048 3072 0 count 1 0 1
-        modulusValue (UInt256.ofNat 1343) helperRest (by omega) (by omega)
+        modulusValue (UInt256.ofNat 944) helperRest (by omega) (by omega)
         (by omega) (by omega) (by omega) (Or.inr (by omega))
         (Or.inr (by omega)) (Or.inl (by omega)) (Or.inl (by omega))
         hexitZero hexitOne hexitModulus (by omega) (by omega) hexitModulus.1
@@ -578,17 +561,17 @@ theorem initialAccumulator_represents (s : State) (accumulator : UInt256)
       (BigBaseLoop.initialAccumulator s accumulator count baseSize e m baseOff
         rest).memory 1024 count baseValue := by
     simpa [BigBaseLoop.initialAccumulator, helperRest, exit, h0, h1, h2048,
-      h3072, hColdEntry] using
+      h3072, h944] using
       BigHelpers.addReturned_preserves_region exit 2048 3072 1 0 1024 count
-        baseValue (UInt256.ofNat 1343) helperRest (by omega) (by omega)
+        baseValue (UInt256.ofNat 944) helperRest (by omega) (by omega)
         (Or.inr (by omega)) (Or.inl (by omega)) hexitBase
   have hmod : Limbs.Represents
       (BigBaseLoop.initialAccumulator s accumulator count baseSize e m baseOff
         rest).memory 0 count modulusValue := by
     simpa [BigBaseLoop.initialAccumulator, helperRest, exit, h0, h1, h2048,
-      h3072, hColdEntry] using
+      h3072, h944] using
       BigHelpers.addReturned_preserves_region exit 2048 3072 1 0 0 count
-        modulusValue (UInt256.ofNat 1343) helperRest (by omega) (by omega)
+        modulusValue (UInt256.ofNat 944) helperRest (by omega) (by omega)
         (Or.inr (by omega)) (Or.inl (by omega)) hexitModulus
   exact ⟨hacc, by simpa [baseValue] using hbase, hmod⟩
 

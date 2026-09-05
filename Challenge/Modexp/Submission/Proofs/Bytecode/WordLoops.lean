@@ -44,9 +44,7 @@ private def pushAt (index : Nat) (width : Fin 33) (value : UInt256)
 def bitFinishTailPath :
     List (Challenge.EvmProof.Stepper.Located Artifact.submissionArtifact .Osaka) :=
   [opAt 525 .JUMPDEST, opAt 526 .POP, opAt 527 .POP, opAt 528 .POP,
-   pushAt 529 1 1, opAt 530 (.Dup ⟨1, by decide⟩), opAt 531 .ADD,
-   opAt 532 (.Swap ⟨0, by decide⟩), opAt 533 .POP,
-   pushAt 534 2 589, opAt 535 .JUMP]
+   pushAt 529 1 1, opAt 530 .ADD, pushAt 531 2 589, opAt 532 .JUMP]
 
 def bitFinishDispatchState (input : ByteArray) (outer : Nat)
     (byte offset acc base : UInt256) : State :=
@@ -54,7 +52,7 @@ def bitFinishDispatchState (input : ByteArray) (outer : Nat)
 
 @[simp] private theorem exitPCs (i : Nat) (hi : 525 ≤ i) (hii : i ≤ 549) :
     Artifact.submissionArtifact.instructionPC i =
-      [655,656,657,658,659,661,662,663,664,665,668,669,670,671,672,
+      [655,656,657,658,659,661,662,665,666,667,668,669,670,671,672,
        673,675,676,678,679,680,683,684,685,688][i - 525]! := by
   interval_cases i <;> decide
 
@@ -66,128 +64,51 @@ def bitFinishDispatchState (input : ByteArray) (outer : Nat)
     Decode.isValidJumpDest submissionBytecode 589 = true :=
   Artifact.isValidJumpDest_index 469 (by rfl)
 
-def bitFinishGuardHeadPath := bitGuardPath.take 6
-def bitFinishGuardJumpPath := bitGuardPath.drop 6
-
-/-- Exponent-bit guard state with the taken `JUMPI` operands on the stack. -/
-def bitFinishGuardMidState (input : ByteArray) (outer : Nat)
-    (byte offset acc base : UInt256) : State :=
-  { bitLoopState input outer 8 byte offset acc base with
-    pc := UInt256.ofNat 615
-    stack := UInt256.ofNat 655 :: UInt256.ofNat 1 ::
-      (bitLoopState input outer 8 byte offset acc base).stack }
-
 set_option linter.unusedSimpArgs false in
-theorem run_bitFinishGuardHead (input : ByteArray) (outer : Nat)
-    (byte offset acc base : UInt256) :
-    Challenge.EvmProof.Stepper.runLocatedBlock bitFinishGuardHeadPath
-      (bitLoopState input outer 8 byte offset acc base) =
-        some (bitFinishGuardMidState input outer byte offset acc base) := by
-  have h8 : (8 : UInt256).toNat = 8 := by decide
-  have h8mod : 8 % 2 ^ 256 = 8 := by norm_num
-  have h655Word : (655 : UInt256) = UInt256.ofNat 655 := by decide
-  have honeWord : (1 : UInt256) = UInt256.ofNat 1 := by decide
-  have hzeroIsZero : (UInt256.ofNat 0).isZero = UInt256.ofNat 1 := by decide
-  simp (config := { maxSteps := 150000 })
-    [bitFinishGuardHeadPath, bitGuardPath, Word.opAt, Word.pushAt, Word.wfOp,
-      Challenge.EvmProof.Stepper.runLocatedBlock,
-      Challenge.EvmProof.Stepper.runLocated, Challenge.EvmProof.Stepper.runInstr,
-      bitLoopState, bitFinishGuardMidState, nonzeroState, callerRest,
-      Dispatch.wordEntryState, Main.headerState, initialState,
-      UInt256.isTrue, UInt256.lt, Challenge.EvmProof.Word.word_toNat_ofNat,
-      h8, h8mod, h655Word, honeWord, hzeroIsZero]
-
-set_option linter.unusedSimpArgs false in
-theorem run_bitFinishGuardJump (input : ByteArray) (outer : Nat)
-    (byte offset acc base : UInt256) :
-    Challenge.EvmProof.Stepper.runLocatedBlock bitFinishGuardJumpPath
-      (bitFinishGuardMidState input outer byte offset acc base) =
-        some (bitFinishDispatchState input outer byte offset acc base) := by
-  have h655 : (655 : UInt256).toNat = 655 := by decide
-  have h655Word : (655 : UInt256) = UInt256.ofNat 655 := by decide
-  have htrue : UInt256.isTrue (UInt256.ofNat 1) := by decide
-  simp (config := { maxSteps := 150000 })
-    [bitFinishGuardJumpPath, bitGuardPath, Word.opAt, Word.pushAt, Word.wfOp,
-      Challenge.EvmProof.Stepper.runLocatedBlock,
-      Challenge.EvmProof.Stepper.runLocated, Challenge.EvmProof.Stepper.runInstr,
-      bitFinishGuardMidState, bitLoopState, bitFinishDispatchState, nonzeroState,
-      callerRest, Dispatch.wordEntryState, Main.headerState, initialState,
-      UInt256.isTrue, Challenge.EvmProof.Word.word_toNat_ofNat,
-      htrue, h655, h655Word, jump655]
-
 theorem run_bitFinishGuard (input : ByteArray) (outer : Nat)
     (byte offset acc base : UInt256) :
     Challenge.EvmProof.Stepper.runLocatedBlock bitGuardPath
       (bitLoopState input outer 8 byte offset acc base) =
         some (bitFinishDispatchState input outer byte offset acc base) := by
-  have hsplit : bitGuardPath = bitFinishGuardHeadPath ++ bitFinishGuardJumpPath :=
-    (List.take_append_drop 6 bitGuardPath).symm
-  have hrunning :
-      (bitFinishGuardMidState input outer byte offset acc base).halt = .Running := rfl
-  rw [hsplit]
-  exact Challenge.EvmProof.Stepper.runLocatedBlock_append _ _ _ _ _
-    (run_bitFinishGuardHead input outer byte offset acc base) hrunning
-    (run_bitFinishGuardJump input outer byte offset acc base)
-
-def bitFinishTailHeadPath := bitFinishTailPath.take 9
-def bitFinishTailJumpPath := bitFinishTailPath.drop 9
-
-/-- Exponent-loop state just before the back edge `PUSH2 589; JUMP`. -/
-def bitFinishTailMidState (input : ByteArray) (outer : Nat)
-    (acc base : UInt256) : State :=
-  { expLoopState input (outer + 1) acc base with pc := UInt256.ofNat 665 }
-
-set_option linter.unusedSimpArgs false in
-theorem run_bitFinishTailHead (input : ByteArray) (outer : Nat)
-    (byte offset acc base : UInt256) (hvalid : ValidInput input)
-    (houter : outer < exponentSize input) :
-    Challenge.EvmProof.Stepper.runLocatedBlock bitFinishTailHeadPath
-      (bitFinishDispatchState input outer byte offset acc base) =
-        some (bitFinishTailMidState input outer acc base) := by
-  rcases hvalid with ⟨_, hb, he, hm⟩
-  have hsucc := Challenge.EvmProof.Word.ofNat_add_ofNat
-    (a := outer) (b := 1) (by omega : outer + 1 < 2 ^ 256)
-  have honeWord : (1 : UInt256) = UInt256.ofNat 1 := by decide
-  simp (config := { maxSteps := 175000 })
-    [bitFinishTailHeadPath, bitFinishTailPath, opAt, pushAt,
+  have h8 : (8 : UInt256).toNat = 8 := by decide
+  have h8mod : 8 % 2 ^ 256 = 8 := by norm_num
+  have hzeroFalse : ¬(UInt256.ofNat 0).isZero.toNat = 0 := by decide
+  have h655 : (655 : UInt256).toNat = 655 := by decide
+  have h655Word : (655 : UInt256) = UInt256.ofNat 655 := by decide
+  simp (config := { maxSteps := 150000 })
+    [bitGuardPath, Word.opAt, Word.pushAt, Word.wfOp,
       Challenge.EvmProof.Stepper.runLocatedBlock,
       Challenge.EvmProof.Stepper.runLocated, Challenge.EvmProof.Stepper.runInstr,
-      bitFinishDispatchState, bitFinishTailMidState, bitLoopState, expLoopState,
-      nonzeroState, callerRest, Dispatch.wordEntryState, Main.headerState,
-      initialState, exitPCs, List.exchange,
-      Challenge.EvmProof.Word.word_toNat_ofNat, hsucc, honeWord]
+      bitLoopState, bitFinishDispatchState, nonzeroState, callerRest,
+      Dispatch.wordEntryState, Main.headerState, initialState,
+      UInt256.isTrue, UInt256.lt, Challenge.EvmProof.Word.word_toNat_ofNat,
+      h8, h8mod, hzeroFalse, h655, h655Word, jump655]
 
 set_option linter.unusedSimpArgs false in
-theorem run_bitFinishTailJump (input : ByteArray) (outer : Nat)
-    (acc base : UInt256) :
-    Challenge.EvmProof.Stepper.runLocatedBlock bitFinishTailJumpPath
-      (bitFinishTailMidState input outer acc base) =
-        some (expLoopState input (outer + 1) acc base) := by
-  have h589 : (589 : UInt256).toNat = 589 := by decide
-  have h589Word : (589 : UInt256) = UInt256.ofNat 589 := by decide
-  simp (config := { maxSteps := 175000 })
-    [bitFinishTailJumpPath, bitFinishTailPath, opAt, pushAt,
-      Challenge.EvmProof.Stepper.runLocatedBlock,
-      Challenge.EvmProof.Stepper.runLocated, Challenge.EvmProof.Stepper.runInstr,
-      bitFinishTailMidState, expLoopState, nonzeroState, callerRest,
-      Dispatch.wordEntryState, Main.headerState, initialState, exitPCs,
-      Challenge.EvmProof.Word.word_toNat_ofNat, h589, h589Word, jump589]
-
 theorem run_bitFinishTail (input : ByteArray) (outer : Nat)
     (byte offset acc base : UInt256) (hvalid : ValidInput input)
     (houter : outer < exponentSize input) :
     Challenge.EvmProof.Stepper.runLocatedBlock bitFinishTailPath
       (bitFinishDispatchState input outer byte offset acc base) =
         some (expLoopState input (outer + 1) acc base) := by
-  have hsplit : bitFinishTailPath =
-      bitFinishTailHeadPath ++ bitFinishTailJumpPath :=
-    (List.take_append_drop 9 bitFinishTailPath).symm
-  have hrunning : (bitFinishTailMidState input outer acc base).halt = .Running := rfl
-  rw [hsplit]
-  exact Challenge.EvmProof.Stepper.runLocatedBlock_append _ _ _ _ _
-    (run_bitFinishTailHead input outer byte offset acc base
-      hvalid houter) hrunning
-    (run_bitFinishTailJump input outer acc base)
+  rcases hvalid with ⟨_, hb, he, hm⟩
+  have hsucc := Challenge.EvmProof.Word.ofNat_add_ofNat
+    (a := outer) (b := 1) (by omega : outer + 1 < 2 ^ 256)
+  have hincLeft : UInt256.ofNat 1 + UInt256.ofNat outer =
+      UInt256.ofNat (outer + 1) := by
+    rw [Challenge.EvmProof.Word.word_add_comm]
+    exact hsucc
+  have honeWord : (1 : UInt256) = UInt256.ofNat 1 := by decide
+  have h589 : (589 : UInt256).toNat = 589 := by decide
+  have h589Word : (589 : UInt256) = UInt256.ofNat 589 := by decide
+  simp (config := { maxSteps := 175000 })
+    [bitFinishTailPath, opAt, pushAt,
+      Challenge.EvmProof.Stepper.runLocatedBlock,
+      Challenge.EvmProof.Stepper.runLocated, Challenge.EvmProof.Stepper.runInstr,
+      bitFinishDispatchState, bitLoopState, expLoopState, nonzeroState,
+      callerRest, Dispatch.wordEntryState, Main.headerState, initialState,
+      exitPCs, List.exchange, Challenge.EvmProof.Word.word_toNat_ofNat,
+      hsucc, hincLeft, honeWord, h589, h589Word, jump589]
 
 def gasSteps_expEnter (input : ByteArray) (i : Nat) (acc base : UInt256)
     (hvalid : ValidInput input) (hi : i < exponentSize input) :

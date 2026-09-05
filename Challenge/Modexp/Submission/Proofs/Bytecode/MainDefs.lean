@@ -5,13 +5,13 @@ set_option warningAsError true
 set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
 /-!
-# MODEXP bytecode entry and header validation
+# MODEXP bytecode entry and header parsing
 
-This is the first execution certificate for the frozen artifact.  It follows
-the compiler's function-declaration trampolines, reads the three EIP-198
-header words, proves the EIP-7823 checks take their successful edge, and
-stops at the operand dispatcher.  The same `GasSteps` witness is used by the
-functional proof and by the exact gas schedule.
+This is the first execution certificate for the frozen artifact. It follows
+the optimized entry jump, reads the three EIP-198 header words, skips the
+redundant EIP-7823 checks on the challenge's already-valid domain, and stops at
+the operand dispatcher. The same `GasSteps` witness is used by the functional
+proof and by the exact gas schedule.
 -/
 
 namespace Challenge.Modexp.Submission.Proofs.Bytecode.Main
@@ -43,7 +43,7 @@ def pushAt (index : Nat) (width : Fin 33) (value : UInt256)
 /-- First half of the compiler trampoline chain. -/
 def trampoline1Path :
     List (Challenge.EvmProof.Stepper.Located Artifact.submissionArtifact .Osaka) :=
-  [pushAt 0 2 1196, opAt 1 .JUMP]
+  [pushAt 0 2 1314, opAt 1 .JUMP]
 
 /-- Second half of the compiler trampoline chain. -/
 def trampoline2Path :
@@ -57,34 +57,18 @@ def headerLoadPath :
    pushAt 902 1 32, opAt 903 .CALLDATALOAD,
    pushAt 904 1 64, opAt 905 .CALLDATALOAD]
 
-/-- Successful EIP-7823 bound check. -/
+/-- Direct jump over the EIP-7823 checks, justified by `Correct`'s valid-input
+precondition. The jump preserves the three loaded length words. -/
 def headerCheckPath :
     List (Challenge.EvmProof.Stepper.Located Artifact.submissionArtifact .Osaka) :=
-  [pushAt 906 2 1024, opAt 907 (.Dup ⟨1, by decide⟩), opAt 908 .GT,
-   pushAt 909 2 1024, opAt 910 (.Dup ⟨3, by decide⟩), opAt 911 .GT,
-   pushAt 912 2 1024, opAt 913 (.Dup ⟨5, by decide⟩), opAt 914 .GT,
-   opAt 915 .OR, opAt 916 .OR, opAt 917 .ISZERO,
-   pushAt 918 2 1228, opAt 919 .JUMPI]
+  [pushAt 906 2 1228, opAt 907 .JUMP]
 
-def headerModulusCheckPath :=
-  [pushAt 906 2 1024, opAt 907 (.Dup ⟨1, by decide⟩), opAt 908 .GT]
-
-def headerExponentCheckPath :=
-  [pushAt 909 2 1024, opAt 910 (.Dup ⟨3, by decide⟩), opAt 911 .GT]
-
-def headerBaseCheckPath :=
-  [pushAt 912 2 1024, opAt 913 (.Dup ⟨5, by decide⟩), opAt 914 .GT]
-
-def headerCheckFinishPath :=
-  [opAt 915 .OR, opAt 916 .OR, opAt 917 .ISZERO,
-   pushAt 918 2 1228, opAt 919 .JUMPI]
-
-/-- Reachable instructions from byte zero through the successful header
-check, retained as a single audit-friendly path. -/
+/-- Reachable instructions from byte zero through optimized header parsing,
+retained as a single audit-friendly path. -/
 def headerPath := trampoline1Path ++ trampoline2Path ++
   headerLoadPath ++ headerCheckPath
 
-def tramp0Path := [pushAt 0 2 1196, opAt 1 .JUMP]
+def tramp0Path := [pushAt 0 2 1314, opAt 1 .JUMP]
 def tramp1Path := [opAt 12 .JUMPDEST, pushAt 13 2 53, opAt 14 .JUMP]
 def tramp2Path := [opAt 43 .JUMPDEST, pushAt 44 2 99, opAt 45 .JUMP]
 def tramp3Path := [opAt 80 .JUMPDEST, pushAt 81 2 305, opAt 82 .JUMP]

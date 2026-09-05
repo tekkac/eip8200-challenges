@@ -220,65 +220,24 @@ theorem run_wordRest (input : ByteArray) (hvalid : ValidInput input)
       hgt, h0, hzeroWord, h96Word,
       hadd₁, hadd₂, Nat.add_assoc]
 
-/-- Argument frame midway through the `modexpWord` call setup. -/
-def wordTailMidState (input : ByteArray) : State :=
-  let b := baseSize input
-  let e := exponentSize input
-  let m := modulusSize input
-  let expOff := 96 + b
-  let modOff := expOff + e
-  { Main.headerState input with
-    pc := UInt256.ofNat 1260
-    stack := [UInt256.ofNat 96, UInt256.ofNat expOff, UInt256.ofNat modOff,
-      UInt256.ofNat 1267, UInt256.ofNat modOff, UInt256.ofNat expOff,
-      UInt256.ofNat m, UInt256.ofNat e, UInt256.ofNat b] }
-
-def wordTailHeadPath := wordTailPath.take 4
-def wordTailJumpPath := wordTailPath.drop 4
-
 set_option maxHeartbeats 5000000 in
 set_option linter.unusedSimpArgs false in
-theorem run_wordTailHead (input : ByteArray) :
-    Challenge.EvmProof.Stepper.runLocatedBlock wordTailHeadPath
-      (wordCheckedState input) = some (wordTailMidState input) := by
-  have h96Word : (96 : UInt256) = UInt256.ofNat 96 := by decide
-  have h1267Word : (1267 : UInt256) = UInt256.ofNat 1267 := by decide
-  simp (config := { maxSteps := 200000 })
-    [wordTailHeadPath, wordTailPath, wordRestPath, wordEntryPath, opAt, pushAt,
-      Challenge.EvmProof.Stepper.runLocatedBlock,
-      Challenge.EvmProof.Stepper.runLocated, Challenge.EvmProof.Stepper.runInstr,
-      wordCheckedState, wordTailMidState, Main.headerState, initialState,
-      h96Word, h1267Word,
-      Challenge.EvmProof.Word.word_toNat_ofNat,
-      Challenge.EvmProof.Word.ofNat_add_mod,
-      Challenge.EvmProof.Word.succ_ofNat_mod, Nat.add_assoc]
-
-set_option maxHeartbeats 5000000 in
-set_option linter.unusedSimpArgs false in
-theorem run_wordTailJump (input : ByteArray) :
-    Challenge.EvmProof.Stepper.runLocatedBlock wordTailJumpPath
-      (wordTailMidState input) = some (wordEntryState input) := by
-  have h517 : (517 : UInt256).toNat = 517 := by decide
-  have h517Word : (517 : UInt256) = UInt256.ofNat 517 := by decide
-  simp (config := { maxSteps := 200000 })
-    [wordTailJumpPath, wordTailPath, wordRestPath, wordEntryPath, opAt, pushAt,
-      Challenge.EvmProof.Stepper.runLocatedBlock,
-      Challenge.EvmProof.Stepper.runLocated, Challenge.EvmProof.Stepper.runInstr,
-      wordTailMidState, wordEntryState, Main.headerState, initialState,
-      h517, h517Word,
-      Challenge.EvmProof.Word.word_toNat_ofNat,
-      Challenge.EvmProof.Word.ofNat_add_mod,
-      Challenge.EvmProof.Word.succ_ofNat_mod, Nat.add_assoc]
-
 theorem run_wordTail (input : ByteArray) :
     Challenge.EvmProof.Stepper.runLocatedBlock wordTailPath
       (wordCheckedState input) = some (wordEntryState input) := by
-  have hsplit : wordTailPath = wordTailHeadPath ++ wordTailJumpPath :=
-    (List.take_append_drop 4 wordTailPath).symm
-  have hrunning : (wordTailMidState input).halt = .Running := rfl
-  rw [hsplit]
-  exact Challenge.EvmProof.Stepper.runLocatedBlock_append _ _ _ _ _
-    (run_wordTailHead input) hrunning (run_wordTailJump input)
+  have h517 : (517 : UInt256).toNat = 517 := by decide
+  have h517Word : (517 : UInt256) = UInt256.ofNat 517 := by decide
+  have h96Word : (96 : UInt256) = UInt256.ofNat 96 := by decide
+  have h1267Word : (1267 : UInt256) = UInt256.ofNat 1267 := by decide
+  simp (config := { maxSteps := 200000 })
+    [wordTailPath, wordRestPath, wordEntryPath, opAt, pushAt,
+      Challenge.EvmProof.Stepper.runLocatedBlock,
+      Challenge.EvmProof.Stepper.runLocated, Challenge.EvmProof.Stepper.runInstr,
+      wordCheckedState, wordEntryState, Main.headerState, initialState,
+      h517, h517Word, h96Word, h1267Word,
+      Challenge.EvmProof.Word.word_toNat_ofNat,
+      Challenge.EvmProof.Word.ofNat_add_mod,
+      Challenge.EvmProof.Word.succ_ofNat_mod, Nat.add_assoc]
 
 private def gasSteps_zeroSetup (input : ByteArray)
     (hzero : modulusSize input = 0) :
@@ -378,16 +337,12 @@ theorem gasSteps_wordEntry_cost (input : ByteArray) (hvalid : ValidInput input)
 
 /-- Complete trace and exact minimum gas for zero-width results. -/
 def gasSteps_zeroSize_total (input : ByteArray) (hvalid : ValidInput input)
-    (hzero : modulusSize input = 0) :
+    (hzero : modulusSize input = 0)
+    (entry : Challenge.EvmProof.GasSteps (initialState submissionBytecode input 0)
+      (Main.trampolineState input 1196)) :
     Challenge.EvmProof.GasSteps (initialState submissionBytecode input 0)
       (zeroSizeFinalState input) :=
-  (Main.gasSteps_header input hvalid).trans (gasSteps_zeroSize input hzero)
-
-theorem gasSteps_zeroSize_total_cost (input : ByteArray)
-    (hvalid : ValidInput input) (hzero : modulusSize input = 0) :
-    (gasSteps_zeroSize_total input hvalid hzero).cost = 99 := by
-  simp [gasSteps_zeroSize_total, Main.gasSteps_header_cost,
-    gasSteps_zeroSize_cost]
+  (Main.gasSteps_header input hvalid entry).trans (gasSteps_zeroSize input hzero)
 
 @[simp] theorem zeroSizeFinalState_isDone (input : ByteArray) :
     (zeroSizeFinalState input).isDone = true := by

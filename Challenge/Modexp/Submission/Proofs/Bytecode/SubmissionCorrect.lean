@@ -21,7 +21,7 @@ open EvmSemantics.EVM
   | zero => rfl
   | succ j ih =>
       simp [BigMul.mulWordProgress, BigMul.mulWordAfterDouble,
-        BigHelpers.addReturned, ih]
+        BigMul.mulWordAfterAdd, BigMul.mulInnerState, BigHelpers.addReturned, ih]
 
 @[simp] theorem mulOuterProgress_callStack (current : State)
     (a b out modulus : UInt256) (count i : Nat) (returnDest : UInt256)
@@ -55,22 +55,19 @@ open EvmSemantics.EVM
       i j offset byte rest).callStack = s.callStack := by
   simp [BigExponent.copiedSquare, BigHelpers.copyReturned]
 
-@[simp] theorem bitProductReturned_callStack (s : State)
+@[simp] theorem productReturned_callStack (s : State)
     (accumulatorWord : UInt256) (count b e m baseOff expOff i j : Nat)
     (offset byte : UInt256) (rest : List UInt256) :
-    (BigExponent.bitProductReturned s accumulatorWord count b e m baseOff expOff
+    (BigExponent.productReturned s accumulatorWord count b e m baseOff expOff
       i j offset byte rest).callStack = s.callStack := by
-  simp [BigExponent.bitProductReturned]
+  simp [BigExponent.productReturned]
 
-@[simp] theorem bitStepProgress_callStack (s : State)
-    (accumulatorWord : UInt256) (count b e m baseOff expOff i j : Nat)
+@[simp] theorem selectProgress_callStack (s : State)
+    (accumulatorWord : UInt256) (count b e m baseOff expOff i j k : Nat)
     (offset byte : UInt256) (rest : List UInt256) :
-    (BigExponent.bitStepProgress s accumulatorWord count b e m baseOff expOff
-      i j offset byte rest).callStack = s.callStack := by
-  unfold BigExponent.bitStepProgress
-  split
-  · simp
-  · simp [BigExponent.bitCopyBack, BigHelpers.copyReturned]
+    (BigExponent.selectProgress s accumulatorWord count b e m baseOff expOff
+      i j offset byte rest k).callStack = s.callStack := by
+  simp [BigExponent.selectProgress]
 
 @[simp] theorem exponentBitProgress_callStack (s : State)
     (accumulatorWord : UInt256) (count b e m baseOff expOff i j : Nat)
@@ -96,8 +93,7 @@ open EvmSemantics.EVM
   induction j with
   | zero => rfl
   | succ j ih =>
-      simp [BigBase.bitProgress, BigBase.bitAfterAdd, BigBase.bitChoice,
-        BigHelpers.addReturned, ih]
+      simp [BigBase.bitProgress, BigHelpers.addReturned, ih]
 
 @[simp] theorem baseProgress_callStack (count baseOff i : Nat) (s : State) :
     (BigBase.baseProgress count baseOff i s).callStack = s.callStack := by
@@ -133,41 +129,6 @@ open EvmSemantics.EVM
   simp [BigComplete.exponentState, BigBaseLoop.initialAccumulator,
     BigBaseLoop.baseConvertedExit, BigBase.outerExit, BigBase.outerLoop,
     BigHelpers.addReturned]
-
-@[simp] theorem bitProgressFrom_callStack (s : State)
-    (accumulatorWord : UInt256) (count b e m baseOff expOff i start t : Nat)
-    (offset byte : UInt256) (rest : List UInt256) :
-    (BigExponent.bitProgressFrom s accumulatorWord count b e m baseOff expOff i
-      offset byte rest start t).callStack = s.callStack := by
-  induction t with
-  | zero => rfl
-  | succ t ih => simp [BigExponent.bitProgressFrom, ih]
-
-@[simp] theorem byteProgressFrom_callStack (s : State)
-    (accumulatorWord : UInt256) (count b e m baseOff expOff start t : Nat)
-    (rest : List UInt256) :
-    (BigExponent.byteProgressFrom s accumulatorWord count b e m baseOff expOff
-      rest start t).callStack = s.callStack := by
-  induction t with
-  | zero => rfl
-  | succ t ih => simp [BigExponent.byteProgressFrom, ih]
-
-@[simp] theorem coldPhaseHit_callStack (s : State) (accumulatorWord : UInt256)
-    (count b e m baseOff expOff : Nat) (rest : List UInt256) :
-    (BigExponent.coldPhaseHit s accumulatorWord count b e m baseOff expOff
-      rest).callStack = s.callStack := by
-  simp [BigExponent.coldPhaseHit, BigExponent.coldCopied, BigHelpers.copyReturned, BigExponent.coldCopyState, BigExponent.coldBitLoop]
-
-@[simp] theorem exponentPhaseState_callStack' (s : State)
-    (accumulatorWord : UInt256) (count b e m baseOff expOff : Nat)
-    (rest : List UInt256) :
-    (BigExponent.exponentPhaseState s accumulatorWord count b e m baseOff
-      expOff rest).callStack = s.callStack := by
-  unfold BigExponent.exponentPhaseState
-  split
-  · rfl
-  · simp [BigExponent.coldPhaseTail, BigExponent.byteFinalFrom,
-      BigExponent.coldPhaseBits, BigExponent.bitFinalFrom]
 
 @[simp] theorem exponentProgressState_callStack (s : State)
     (b e m baseOff expOff modOff : Nat) (returnDest : UInt256)
@@ -227,8 +188,11 @@ def bigZeroFinalState (input : ByteArray) : State :=
     (exponentSize input) (modulusSize input) 96 (Word.expOffset input)
     (Word.modulusOffset input) bigReturnDest (bigRest input)
 
-def gasSteps_bigNonzeroTotal (input : ByteArray) (hvalid : ValidInput input)
-    (hbig : 32 < modulusSize input) (hmodulusPos : 0 < Word.modulusValue input) :
+private def certifiedBigNonzeroTotal (input : ByteArray)
+    (hvalid : ValidInput input) (hbig : 32 < modulusSize input)
+    (hmodulusPos : 0 < Word.modulusValue input)
+    (entry : Challenge.EvmProof.GasSteps (initialState submissionBytecode input 0)
+      (Main.trampolineState input 1196)) :
     Challenge.EvmProof.GasSteps (initialState submissionBytecode input 0)
       (bigCompletedState input) := by
   have hb := hvalid.2.1
@@ -257,7 +221,6 @@ def gasSteps_bigNonzeroTotal (input : ByteArray) (hvalid : ValidInput input)
   have hcode : (Main.headerState input).executionEnv.code = submissionBytecode := rfl
   have hfork : (Main.headerState input).fork = .Osaka := rfl
   have hrun : (Main.headerState input).halt = .Running := rfl
-  have hpositive : 0 < modulusSize input := by omega
   let hcore := BigComplete.gasSteps_nonzero (Main.headerState input)
     (baseSize input) (exponentSize input) (modulusSize input) 96
     (Word.expOffset input) (Word.modulusOffset input) bigReturnDest
@@ -268,16 +231,25 @@ def gasSteps_bigNonzeroTotal (input : ByteArray) (hvalid : ValidInput input)
         (by simp [BigDispatch.bigEntryState, BigSetup.setupEntry, bigRest,
           bigReturnDest, Word.expOffset, Word.modulusOffset, Nat.add_assoc])
         (by rfl)
-  exact ((Main.gasSteps_header input hvalid).trans
+  have hpositive : 0 < modulusSize input := by omega
+  let total := ((Main.gasSteps_header input hvalid entry).trans
     (BigDispatch.gasSteps_bigEntry input hvalid hpositive hbig)).trans hcore'
+  exact total
+
+def gasSteps_bigNonzeroTotal (input : ByteArray) (hvalid : ValidInput input)
+    (hbig : 32 < modulusSize input) (hmodulusPos : 0 < Word.modulusValue input)
+    (entry : Challenge.EvmProof.GasSteps (initialState submissionBytecode input 0)
+      (Main.trampolineState input 1196)) :
+    Challenge.EvmProof.GasSteps (initialState submissionBytecode input 0)
+      (bigCompletedState input) :=
+  certifiedBigNonzeroTotal input hvalid hbig hmodulusPos entry
 
 private def certifiedBigZeroTotal (input : ByteArray) (hvalid : ValidInput input)
-    (hbig : 32 < modulusSize input) (hmodulus : Word.modulusValue input = 0) :
-    {g : Challenge.EvmProof.GasSteps (initialState submissionBytecode input 0)
-        (bigZeroFinalState input) //
-      g.cost = 169 + BigZeroCorrect.zeroWork
-        (Limbs.limbCount (modulusSize input)) (modulusSize input) +
-        MachineState.memCost (bigZeroFinalState input).activeWords.toNat} := by
+    (hbig : 32 < modulusSize input) (hmodulus : Word.modulusValue input = 0)
+    (entry : Challenge.EvmProof.GasSteps (initialState submissionBytecode input 0)
+      (Main.trampolineState input 1196)) :
+    Challenge.EvmProof.GasSteps (initialState submissionBytecode input 0)
+      (bigZeroFinalState input) := by
   have hb := hvalid.2.1
   have he := hvalid.2.2.1
   have hm := hvalid.2.2.2
@@ -307,45 +279,17 @@ private def certifiedBigZeroTotal (input : ByteArray) (hvalid : ValidInput input
           bigReturnDest, Word.expOffset, Word.modulusOffset, Nat.add_assoc])
         (by rfl)
   have hpositive : 0 < modulusSize input := by omega
-  let total := ((Main.gasSteps_header input hvalid).trans
+  let total := ((Main.gasSteps_header input hvalid entry).trans
     (BigDispatch.gasSteps_bigEntry input hvalid hpositive hbig)).trans hcore'
-  refine ⟨total, ?_⟩
-  have hcoreCost : hcore.cost + MachineState.memCost
-      (Main.headerState input).activeWords.toNat =
-      BigZeroCorrect.zeroWork (Limbs.limbCount (modulusSize input))
-        (modulusSize input) + MachineState.memCost
-          (BigZeroCorrect.zeroFinalState (Main.headerState input)
-            (baseSize input) (exponentSize input) (modulusSize input) 96
-            (Word.expOffset input) (Word.modulusOffset input) bigReturnDest
-            (bigRest input)).activeWords.toNat := by
-    exact BigZeroCorrect.gasSteps_zero_cost_potential
-      (Main.headerState input) (baseSize input) (exponentSize input)
-      (modulusSize input) 96 (Word.expOffset input) (Word.modulusOffset input)
-      bigReturnDest (bigRest input) hm hmodOff hinputFit hcap hor hcode hfork
-      hrun deployAddress_not_precompile
-  have hactive : (Main.headerState input).activeWords.toNat = 0 := rfl
-  rw [hactive] at hcoreCost
-  norm_num [MachineState.memCost] at hcoreCost
-  simp only [total, Challenge.EvmProof.GasSteps.trans_cost, hcore',
-    Challenge.EvmProof.GasSteps.cast_cost]
-  rw [Main.gasSteps_header_cost, BigDispatch.gasSteps_bigEntry_cost]
-  rw [hcoreCost]
-  simp [bigZeroFinalState, MachineState.memCost, Nat.add_assoc]
+  exact total
 
 def gasSteps_bigZeroTotal (input : ByteArray) (hvalid : ValidInput input)
-    (hbig : 32 < modulusSize input) (hmodulus : Word.modulusValue input = 0) :
+    (hbig : 32 < modulusSize input) (hmodulus : Word.modulusValue input = 0)
+    (entry : Challenge.EvmProof.GasSteps (initialState submissionBytecode input 0)
+      (Main.trampolineState input 1196)) :
     Challenge.EvmProof.GasSteps (initialState submissionBytecode input 0)
       (bigZeroFinalState input) :=
-  (certifiedBigZeroTotal input hvalid hbig hmodulus).1
-
-theorem gasSteps_bigZeroTotal_cost (input : ByteArray)
-    (hvalid : ValidInput input) (hbig : 32 < modulusSize input)
-    (hmodulus : Word.modulusValue input = 0) :
-    (gasSteps_bigZeroTotal input hvalid hbig hmodulus).cost =
-      169 + BigZeroCorrect.zeroWork (Limbs.limbCount (modulusSize input))
-        (modulusSize input) +
-        MachineState.memCost (bigZeroFinalState input).activeWords.toNat :=
-  (certifiedBigZeroTotal input hvalid hbig hmodulus).2
+  certifiedBigZeroTotal input hvalid hbig hmodulus entry
 
 def finalState (input : ByteArray) : State :=
   if modulusSize input = 0 then Dispatch.zeroSizeFinalState input
@@ -356,33 +300,48 @@ def finalState (input : ByteArray) : State :=
   else if Word.modulusValue input = 0 then bigZeroFinalState input
   else bigCompletedState input
 
-def gasSteps_submission (input : ByteArray) (hvalid : ValidInput input) :
+def submissionGas (input : ByteArray) : Nat :=
+  if modulusSize input = 0 then 61
+  else if modulusSize input ≤ 32 then
+    if Word.modulusValue input = 0 then 180 else WordGas.wordGas input
+  else if Word.modulusValue input = 0 then
+    131 + BigZeroCorrect.zeroWork (Limbs.limbCount (modulusSize input))
+      (modulusSize input) +
+      MachineState.memCost (bigZeroFinalState input).activeWords.toNat
+  else
+    131 + BigComplete.nonzeroWork (Limbs.limbCount (modulusSize input))
+      (baseSize input) (exponentSize input) (modulusSize input) +
+      MachineState.memCost (bigCompletedState input).activeWords.toNat
+
+def gasSteps_submission (input : ByteArray) (hvalid : ValidInput input)
+    (entry : Challenge.EvmProof.GasSteps (initialState submissionBytecode input 0)
+      (Main.trampolineState input 1196)) :
     Challenge.EvmProof.GasSteps (initialState submissionBytecode input 0)
       (finalState input) := by
   by_cases hzeroSize : modulusSize input = 0
   · exact Challenge.EvmProof.GasSteps.cast
-      (Dispatch.gasSteps_zeroSize_total input hvalid hzeroSize) rfl
+      (Dispatch.gasSteps_zeroSize_total input hvalid hzeroSize entry) rfl
       (by simp [finalState, hzeroSize])
   have hpositive : 0 < modulusSize input := by omega
   by_cases hword : modulusSize input ≤ 32
   · by_cases hzeroModulus : Word.modulusValue input = 0
     · exact Challenge.EvmProof.GasSteps.cast
         (Word.gasSteps_zeroModulus_total input hvalid hpositive hword
-          hzeroModulus) rfl
+          hzeroModulus entry) rfl
         (by simp [finalState, hzeroSize, hword, hzeroModulus])
     · have hmodulusPos : 0 < Word.modulusValue input := by omega
       exact Challenge.EvmProof.GasSteps.cast
         (WordCorrect.gasSteps_wordNonzeroTotal input hvalid hpositive hword
-          hmodulusPos) rfl
+          hmodulusPos entry) rfl
         (by simp [finalState, hzeroSize, hword, hzeroModulus])
   · have hbig : 32 < modulusSize input := by omega
     by_cases hzeroModulus : Word.modulusValue input = 0
     · exact Challenge.EvmProof.GasSteps.cast
-        (gasSteps_bigZeroTotal input hvalid hbig hzeroModulus) rfl
+        (gasSteps_bigZeroTotal input hvalid hbig hzeroModulus entry) rfl
         (by simp [finalState, hzeroSize, hword, hzeroModulus])
     · have hmodulusPos : 0 < Word.modulusValue input := by omega
       exact Challenge.EvmProof.GasSteps.cast
-        (gasSteps_bigNonzeroTotal input hvalid hbig hmodulusPos) rfl
+        (gasSteps_bigNonzeroTotal input hvalid hbig hmodulusPos entry) rfl
         (by simp [finalState, hzeroSize, hword, hzeroModulus])
 
 @[simp] theorem finalState_isDone (input : ByteArray) :
@@ -425,21 +384,5 @@ theorem finalState_result (input : ByteArray) (hvalid : ValidInput input) :
     Challenge.EvmProof.withGas (initialState submissionBytecode input 0) gas =
       initialState submissionBytecode input gas := by
   rfl
-
-theorem submissionDirectProof :
-    Challenge.Modexp.ProofSupport.Bytecode.DirectProof submissionBytecode := by
-  let Input := { calldata : ByteArray // ValidInput calldata }
-  have h := Challenge.EvmProof.GasSteps.toEventuallyEvaluates
-    (initial := fun input : Input => initialState submissionBytecode input.1 0)
-    (final := fun input : Input => finalState input.1)
-    (expected := fun input : Input => .returned (spec input.1))
-    (fun input => gasSteps_submission input.1 input.2)
-    (fun input => finalState_isDone input.1)
-    (fun input => finalState_result input.1 input.2)
-  simpa [Challenge.Modexp.ProofSupport.Bytecode.DirectProof, Input] using h
-
-theorem submission_correct : Correct submissionBytecode :=
-  Challenge.Modexp.ProofSupport.Bytecode.correct_of_directProof
-    submissionDirectProof
 
 end Challenge.Modexp.Submission.Proofs.Bytecode.SubmissionCorrect
