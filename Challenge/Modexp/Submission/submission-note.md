@@ -207,19 +207,19 @@ Trusted scorer, `.lake/build/bin/modexpchallenge --hex=Challenge/Modexp/Submissi
 | vector | size | status | gas | precompile |
 |---|---:|:---:|---:|---:|
 | empty tuple | 0 | ok | 105 | 500 |
-| zero exponent | 98 | ok | 1,107 | 500 |
+| zero exponent | 98 | ok | 459 | 500 |
 | zero modulus | 110 | ok | 224 | 500 |
 | zero modulus size | 98 | ok | 105 | 500 |
-| EIP-198 example 1 | 161 | ok | 37,523 | 4,080 |
-| EIP-198 example 2 | 160 | ok | 37,391 | 4,080 |
-| trailing-zero normalization | 100 | ok | 3,383 | 500 |
-| BN254 modular inversion | 192 | ok | 41,615 | 4,048 |
-| generated 256-bit #01-#32 (32 vectors) | 192 each | ok | 1,331,680 | 130,528 |
+| EIP-198 example 1 | 161 | ok | 36,875 | 4,080 |
+| EIP-198 example 2 | 160 | ok | 36,743 | 4,080 |
+| trailing-zero normalization | 100 | ok | 2,735 | 500 |
+| BN254 modular inversion | 192 | ok | 40,967 | 4,048 |
+| generated 256-bit #01-#32 (32 vectors) | 192 each | ok | 1,310,944 | 130,528 |
 | generated RSA-1024 #01 e=3 | 353 | ok | 160,282 | 512 |
 | generated RSA-1024 #02 e=65537 | 355 | ok | 255,981 | 8,192 |
 | generated RSA-2048 #01 e=3 | 609 | ok | 654,342 | 2,048 |
 | generated RSA-2048 #02 e=65537 | 611 | ok | 994,061 | 32,768 |
-| **Total (44 vectors)** | | **44/44 ok** | **3,517,799** | **188,756** |
+| **Total (44 vectors)** | | **44/44 ok** | **3,493,823** | **188,756** |
 
 Baseline reference gas on this suite is **1,313,215,999**, yielding a **99.73% gas reduction (373× speedup)**.
 Bytecode size: 3,000 bytes. Exported axiom footprint: `propext`, `Quot.sound`, `Classical.choice` only (standard Lean kernel axioms; no `sorry`, no `native_decide`). Fully general algorithm with zero hardcoded calldata memoization.
