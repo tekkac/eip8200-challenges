@@ -83,10 +83,15 @@ def tailState (input : ByteArray) (a : UInt256) : State :=
     pc := UInt256.ofNat 5203
     stack := UInt256.ofNat (scalarAt 31) :: UInt256.ofNat 992 :: a :: frame }
 
+/-- Scanner values retained below the branch condition on the hot hit path. -/
+def retainedStack (input : ByteArray) : List UInt256 :=
+  [UInt256.ofNat (scalarAt 31), UInt256.ofNat 992, scanAcc input 31, P7, M, m7, P, m8]
+
 /-- The stub jumps here, and the guard answers or falls through.  -/
 def patternedEntry (input : ByteArray) : State := atPC input 5005
 
-def hitState (input : ByteArray) : State := atPC input 5237
+def hitState (input : ByteArray) : State :=
+  { atPC input 5226 with stack := retainedStack input }
 def fallbackState (input : ByteArray) : State := atPC input 1006
 
 def storeWord (memory : ByteArray) (address : Nat) (word : UInt256) : ByteArray :=
@@ -96,7 +101,8 @@ def answerMemory : ByteArray := storeWord ByteArray.empty 0 paddedDigestWord
 
 def returnedState (input : ByteArray) : State :=
   { initialState submissionBytecode input 0 with
-    pc := UInt256.ofNat 5263
+    pc := UInt256.ofNat 5252
+    stack := retainedStack input
     memory := answerMemory
     activeWords := UInt256.ofNat 1
     halt := .Returned
