@@ -14,7 +14,7 @@ theorem run_return :
     run returnPath (hitState patternedInput) = some (returnedState patternedInput) := by
   have hzeroNat : ({ val := 0 } : UInt256).toNat = 0 := rfl
   simp (config := { maxSteps := 400000 })
-    [returnPath, opAt, pushAt, wfOp, hitState, atPC, returnedState,
+    [returnPath, opAt, pushAt, wfOp, hitState, retainedStack, atPC, returnedState,
     answerMemory, storeWord, paddedDigestWord,
     MachineState.mstore, State.activeWordsAfterUInt256,
     MachineState.activeWordsAfter, hzeroNat,

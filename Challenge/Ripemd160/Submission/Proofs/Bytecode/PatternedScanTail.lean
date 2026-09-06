@@ -157,9 +157,10 @@ private def gasSteps_cleanup_sym (input : ByteArray) (sv ov acc : UInt256) :
       (by norm_num) pc2874)
       (stepS_jump input 4947 1006 (1006 : UInt256) []
         (by simp) (by norm_num) rfl hdest1006))
-  exact step2864.trans (step2865.trans (step2866.trans (step2867.trans
-    (step2868.trans (step2869.trans (step2870.trans (step2871.trans
-      (step2872.trans (step2873.trans step2874))))))))))
+  exact step2864.trans <| step2865.trans <| step2866.trans <|
+    step2867.trans <| step2868.trans <| step2869.trans <|
+    step2870.trans <| step2871.trans <| step2872.trans <|
+    step2873.trans step2874
 
 /-- The accumulator is zero, so the guard falls directly into the return. -/
 def gasSteps_tail_hit_sym (input : ByteArray) (sv ov acc : UInt256)
