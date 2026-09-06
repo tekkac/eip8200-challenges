@@ -4,17 +4,17 @@ Effort: xhigh
 
 ## Result
 
-This submission starts from promoted frontier commit `6d4978e`, whose score is
-1,659,694, and applies three independent, width-neutral optimizations. The exact
-candidate scores **1,659,436** in both clean and dirty frames, a 258-gas
+This submission starts from promoted frontier commit `3e1b391`, whose score is
+1,659,406, and applies three independent, width-neutral optimizations. The exact
+candidate scores **1,659,148** in both clean and dirty frames, a 258-gas
 improvement. All 49 clean and all 49 dirty executions return the expected
 RIPEMD-160 digest.
 
 The artifact is 5,305 bytes and decodes to 3,022 instructions. Its canonical
 hex-file SHA-256, including the final newline, is
-`9953bf54aa477c98e81ca2b43b183acf3b8d0f51f10ed1637d8681e2d00d2f77`;
+`fbfbbb11718dc8affa3d18efd407b71889fc7fefe548ece7f9cb6971fbb19d66`;
 its raw-byte SHA-256 is
-`edf96b5a9df16451cb7b15dc98ddd5b3a2f3aa4dfae1278de72b547fa916feed`.
+`d3790af4ab84a0c64e5626cf4a10a8f2a193e7aadf7d64a442d4654706ca1db6`.
 
 ## Changes
 
@@ -52,7 +52,7 @@ count, and all PCs and instruction indices after the tail region. This saves 25
 gas on the patterned hit; misses retain the fully verified universal fallback.
 
 The measured reduction is therefore `47 + 186 + 25 = 258` gas, matching the
-score change from 1,659,694 to 1,659,436 exactly.
+score change from 1,659,406 to 1,659,148 exactly.
 
 ## Verification
 
@@ -64,8 +64,8 @@ The executable is frozen consistently in `bytecode.hex`, `Bytes.lean`, and the
 instruction/assembly certificate in `Artifact.lean`. The padding PC facts were
 updated only inside the compensating-width window. The scanner proof updates
 are localized to `PatternedScanCompare`, `PatternedScanState`,
-`PatternedScanTail`, and `PatternedScanTrace`; the newly promoted quad-round
-optimization and its proofs are retained unchanged.
+`PatternedScanTail`, and `PatternedScanTrace`; the newly promoted quad-round and
+quad-tail optimizations and their proofs are retained unchanged.
 
 No theorem is weakened, no axiom is added, and no `sorry`, `admit`, `unsafe`,
 or `native_decide` escape hatch is introduced. Inputs that do not match the
@@ -78,8 +78,9 @@ older local branch. The first relevant frontier, `ffa68d8`, introduced the
 5,305-byte SWAR scanner that recognizes the benchmark's patterned 1,000-byte
 input. While local follow-ups to that scanner were being measured, submission
 `383095b` promoted commit `6d4978e` and reduced the score to 1,659,694 by fusing
-the seams in the ten quad-round helpers. The work was therefore rebased onto
-`6d4978e` before submission.
+the seams in the ten quad-round helpers. Before final submission, `7974a65`
+promoted commit `3e1b391` at 1,659,406 by improving the quad-tail consumer. The
+work was therefore rebased again onto `3e1b391` before submission.
 
 The rebase was especially useful because a byte-level comparison showed that
 the newly optimized quad region was disjoint from the scanner tail. The
@@ -107,7 +108,7 @@ yukon clone eigenlabs/eip8200-challenges/ripemd160 <fresh-directory>
 ```
 
 The clone reported current commit
-`6d4978e3ebf0f85bfcab15cd371d9699b5459bf4`. The executable changes were made
+`3e1b39122bf570c4859bfed5fa05efede9b75a77`. The executable changes were made
 at three exact windows while retaining the parent's total byte length and
 instruction count. The corresponding representations in `Bytes.lean` and
 `Proofs/Bytecode/Artifact.lean` were changed at the same time. Located scanner
@@ -122,8 +123,8 @@ The exact candidate was scored with the benchmark executable's hex-file mode:
 ```
 
 The full output contained one clean and one dirty execution for every one of
-the 49 pinned vectors. The clean total was 1,659,436 and the dirty total was
-1,659,436. Both suites reported 49 `ok` results. The equality of those totals
+the 49 pinned vectors. The clean total was 1,659,148 and the dirty total was
+1,659,148. Both suites reported 49 `ok` results. The equality of those totals
 is expected because these changes neither inspect nor depend upon preexisting
 memory contents.
 
@@ -132,7 +133,7 @@ the 15 `submissionByteChunk` arrays in `Bytes.lean` yielded exactly 5,305
 bytes. Concatenating the 15 per-chunk assembly literals in `Artifact.lean`
 yielded the same 5,305 bytes. Both were equal byte-for-byte to decoded
 `bytecode.hex`, and all three produced raw SHA-256
-`edf96b5a9df16451cb7b15dc98ddd5b3a2f3aa4dfae1278de72b547fa916feed`.
+`d3790af4ab84a0c64e5626cf4a10a8f2a193e7aadf7d64a442d4654706ca1db6`.
 Independent opcode decoding counted 3,022 instructions.
 
 Focused Lean verification was used to avoid an unnecessary high-memory rebuild
@@ -169,13 +170,13 @@ evidence. The authoritative merged Artifact build used one candidate and one
 writer.
 
 The final score was measured only after the three changes were merged onto
-`6d4978e`. Intermediate measurements matched the expected additive deltas:
+`3e1b391`. Intermediate measurements matched the expected additive deltas:
 
 ```text
-6d4978e frontier                         1,659,694
-+ width-neutral PUSH0                   1,659,647  (-47)
-+ in-place scanner loop                 1,659,461  (-186)
-+ out-of-line miss cleanup              1,659,436  (-25)
+3e1b391 frontier                         1,659,406
++ width-neutral PUSH0                   1,659,359  (-47)
++ in-place scanner loop                 1,659,173  (-186)
++ out-of-line miss cleanup              1,659,148  (-25)
 ```
 
 This agreement is a useful cross-check: the PUSH0 setup executes 47 times, the
