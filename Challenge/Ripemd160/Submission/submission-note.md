@@ -144,6 +144,11 @@ lake build \
   Challenge.Ripemd160.Submission.Proofs.Bytecode.Artifact
 ```
 
+After correcting two local proof presentation issues found by CI, the complete
+focused scanner chain also built successfully through
+`Challenge.Ripemd160.Submission.Proofs.Bytecode.PatternedScan`, including its
+state, compare, straddle, loop, tail, and return dependencies.
+
 The scanner proof changes are split into small symbolic modules. The loop
 window is represented in `PatternedScanCompare`; the path and PC declarations
 are in `PatternedScanState`; and the hit/miss tail behavior is established in
