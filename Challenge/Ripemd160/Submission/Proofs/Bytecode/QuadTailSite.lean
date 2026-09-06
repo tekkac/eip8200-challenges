@@ -8,8 +8,8 @@ set_option warningAsError true
 set_option maxRecDepth 100000
 set_option maxHeartbeats 2000000
 
-/-! Exact consume tail: instruction 1422 through the dynamic JUMP at 1475.
-Eight following STOP bytes occupy 1476..1483 and are not executed. -/
+/-! Exact consume tail: instruction 1422 through the dynamic JUMP at 1474.
+Nine following STOP bytes occupy 1475..1483 and are not executed. -/
 namespace Challenge.Ripemd160.Submission.Proofs.Bytecode.QuadTailSite
 
 open Challenge.Ripemd160 Challenge.EvmProof EvmSemantics EvmSemantics.EVM
@@ -101,7 +101,7 @@ private theorem artifact_consume_split :
         (QuadTailTemplate.paddingStops ++ tailAfter) := by
   simpa [List.append_assoc] using artifact_tail_split
 
-private theorem tailInstructions_length : QuadTailTemplate.consumeBody.length = 54 := by
+private theorem tailInstructions_length : QuadTailTemplate.consumeBody.length = 53 := by
   decide
 
 private theorem tail_instruction_at (i : Nat)
@@ -134,7 +134,7 @@ private theorem tail_instruction_pc (i : Nat)
   simpa only [ArtifactByteLength.byteLength_eq_assemble] using h
 
 private theorem tail_instruction_pc_global (index : Nat)
-    (hlo : 1422 ≤ index) (hhi : index ≤ 1476) :
+    (hlo : 1422 ≤ index) (hhi : index ≤ 1475) :
     Artifact.submissionArtifact.instructionPC index =
       0x9a9 + ArtifactByteLength.byteLength
         (QuadTailTemplate.consumeBody.take (index - 1422)) := by
@@ -148,7 +148,7 @@ private theorem tail_instruction_wellFormed (i : Nat)
     (hi : i < QuadTailTemplate.consumeBody.length) :
     Challenge.EvmProof.Stepper.WellFormed .Osaka
       ((QuadTailTemplate.consumeBody)[i]'hi) := by
-  have hle : i ≤ 53 := by
+  have hle : i ≤ 52 := by
     rw [tailInstructions_length] at hi
     omega
   interval_cases i <;>
@@ -175,7 +175,7 @@ def tailPath : List
   (List.finRange QuadTailTemplate.consumeBody.length).map
     (fun i => tailLocated i.val i.isLt)
 
-theorem tailPath_length : tailPath.length = 54 := by
+theorem tailPath_length : tailPath.length = 53 := by
   simp [tailPath]
 
 set_option linter.unusedSimpArgs false in

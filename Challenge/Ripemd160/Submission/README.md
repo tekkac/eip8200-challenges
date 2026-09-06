@@ -8,11 +8,11 @@ continue through the fully verified universal implementation.
 ## Measured artifact
 
 - Byte length: 5,300
-- Hex-file SHA-256: `a0c5d45f1cc0c88369d8733b3cc8c9876c887835f45630e248cbd5491aba08bf`
-- Raw-byte SHA-256: `a8522f951a91827854ee87e9b4fd8728e1afa659d4bca048de634853c11d273f`
+- Hex-file SHA-256: `97e9ffe952962fbb47d3bf9b15acbdc21f20c6315a5f86bf79ae6a049a62b180`
+- Raw-byte SHA-256: `a71a9da9b0a047a0017eff031d3060d1d946f86ee903df647ec2646f88ba50f5`
 - Decoded instruction count: 2,918
-- Final 49-vector clean score: 1,789,145
-- Final 49-vector dirty score: 1,789,145
+- Final 49-vector clean score: 1,788,857
+- Final 49-vector dirty score: 1,788,857
 - Coverage: 49/49 in both clean and dirty runs
 
 The clean and dirty measurements were made from the same byte sequence named
