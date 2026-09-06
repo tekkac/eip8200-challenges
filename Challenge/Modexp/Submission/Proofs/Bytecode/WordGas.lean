@@ -411,7 +411,7 @@ theorem gasSteps_expLoop_cost (input : ByteArray) (acc base : UInt256)
 
 theorem gasSteps_expFinish_cost (input : ByteArray) (acc base : UInt256)
     (hvalid : ValidInput input) (hword : modulusSize input ≤ 32) :
-    (gasSteps_expFinish input acc base hvalid hword).cost = 713 := by
+    (gasSteps_expFinish input acc base hvalid hword).cost = 65 := by
   have hguard := blockCost_of_static expGuardPath 26
     (run_expFinishGuard input acc base hvalid) (by rfl)
     (by decide) (by rfl) (by rfl)
@@ -419,22 +419,21 @@ theorem gasSteps_expFinish_cost (input : ByteArray) (acc base : UInt256)
     expFinishTailPath 36
     (run_expFinishTail input acc base hvalid hword) (by rfl)
     (by decide) (by rfl)
-  have hreturned : MachineState.activeWordsAfter 193 6144
-      (modulusSize input) = 193 := by
+  have hreturned : MachineState.activeWordsAfter 1 0
+      (modulusSize input) = 1 := by
     unfold MachineState.activeWordsAfter
     split
     · rfl
-    · have hdiv : (6143 + modulusSize input) / 32 = 192 := by omega
+    · have hdiv : (modulusSize input - 1) / 32 = 0 := by omega
       dsimp
-      have hoff : 6144 + modulusSize input - 1 = 6143 + modulusSize input := by
-        omega
-      rw [hoff, hdiv]
+      rw [show 0 + modulusSize input - 1 = modulusSize input - 1 by omega,
+        hdiv]
       decide
-  have hstored : MachineState.activeWordsAfter 0 6144 32 = 193 := by decide
-  have hfinal : (wordFinalState input acc base).activeWords.toNat = 193 := by
+  have hstored : MachineState.activeWordsAfter 0 0 32 = 1 := by decide
+  have hfinal : (wordFinalState input acc base).activeWords.toNat = 1 := by
     change (UInt256.ofNat (MachineState.activeWordsAfter
-      (MachineState.activeWordsAfter 0 6144 32) 6144
-        (modulusSize input))).toNat = 193
+      (MachineState.activeWordsAfter 0 0 32) 0
+        (modulusSize input))).toNat = 1
     rw [hstored, hreturned]
     decide
   rw [show (expFinishDispatchState input acc base).activeWords.toNat = 0 by rfl,
@@ -496,6 +495,6 @@ theorem gasSteps_zeroModulus_total_cost_after_header (input : ByteArray)
     gasSteps_zeroModulus_cost input hvalid hmsize hword hmodulus]
 
 def wordGas (input : ByteArray) : Nat :=
-  931 + 132 * baseSize input + 744 * exponentSize input
+  283 + 132 * baseSize input + 744 * exponentSize input
 
 end Challenge.Modexp.Submission.Proofs.Bytecode.WordGas
