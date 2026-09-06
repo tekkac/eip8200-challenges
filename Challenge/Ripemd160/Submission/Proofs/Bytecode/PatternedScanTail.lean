@@ -235,7 +235,9 @@ def gasSteps_tail_hit (input : ByteArray) (hz : scanAccFinal input = 0) :
         (MachineState.readWord input ((992 : UInt256)).toNat))) := by
     rw [tail_read, isTrue_iff]
     exact fun h => h hz
-  rw [tail_state_eq, show hitState input = stS input 5237 [] from rfl]
+  rw [tail_state_eq, show hitState input = stS input 5226
+    [UInt256.ofNat (scalarAt 31), UInt256.ofNat 992,
+      scanAcc input 31, P7, M, m7, P, m8] from rfl]
   exact gasSteps_tail_hit_sym input (UInt256.ofNat (scalarAt 31))
     (UInt256.ofNat 992) (scanAcc input 31) hc
 
