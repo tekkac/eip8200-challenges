@@ -525,7 +525,7 @@ theorem shifted_div (n width k : Nat) (hwidth : width ≤ 32) (hk : k < width) :
 theorem outputMemory_readPadded (input : ByteArray) (n : Nat)
     (hmsize : 0 < modulusSize input) (hword : modulusSize input ≤ 32)
     (hn : n < 256 ^ modulusSize input) :
-    MachineState.readPadded (outputMemory input (UInt256.ofNat n)) 6144
+    MachineState.readPadded (outputMemory input (UInt256.ofNat n)) 0
         (modulusSize input) =
       Precompile.natToBytes n (modulusSize input) := by
   apply ByteArray.ext_getElem
@@ -546,7 +546,7 @@ theorem outputMemory_readPadded (input : ByteArray) (n : Nat)
       · omega
       · simp [YulEvmCompiler.BytesLemmas.natToBytesPadded_size]
         omega)]
-    rw [show 6144 + k - 6144 = k by omega,
+    rw [show 0 + k - 0 = k by omega,
       YulEvmCompiler.BytesLemmas.natToBytesPadded_getElem?_getD _ 32 k
         (by omega),
       Precompile.natToBytes,
@@ -576,7 +576,7 @@ theorem wordFinalState_result (input : ByteArray) (hvalid : ValidInput input)
     exact wordResult_correct input hvalid hmodpos hmodlt]
   change ExecutionResult.returned
       (MachineState.readPadded (outputMemory input (UInt256.ofNat result))
-        6144 (modulusSize input)) = ExecutionResult.returned (spec input)
+        0 (modulusSize input)) = ExecutionResult.returned (spec input)
   rw [outputMemory_readPadded input result hmsize hword hresult]
   congr 1
   simp [spec, Nat.ne_of_gt hmsize, result, baseNat, exponentNat,
