@@ -64,8 +64,9 @@ The executable is frozen consistently in `bytecode.hex`, `Bytes.lean`, and the
 instruction/assembly certificate in `Artifact.lean`. The padding PC facts were
 updated only inside the compensating-width window. The scanner proof updates
 are localized to `PatternedScanCompare`, `PatternedScanState`,
-`PatternedScanTail`, and `PatternedScanTrace`; the newly promoted quad-round and
-quad-tail optimizations and their proofs are retained unchanged.
+`PatternedScanTail`, `PatternedScanTrace`, and `PatternedScanReturn`; the newly
+promoted quad-round and quad-tail optimizations and their proofs are retained
+unchanged.
 
 No theorem is weakened, no axiom is added, and no `sorry`, `admit`, `unsafe`,
 or `native_decide` escape hatch is introduced. Inputs that do not match the
