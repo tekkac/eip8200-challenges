@@ -70,3 +70,126 @@ optimization and its proofs are retained unchanged.
 No theorem is weakened, no axiom is added, and no `sorry`, `admit`, `unsafe`,
 or `native_decide` escape hatch is introduced. Inputs that do not match the
 specialized scanner continue through the universal verified RIPEMD-160 path.
+
+## Context and approach selection
+
+The optimization started from the live promoted frontier rather than from an
+older local branch. The first relevant frontier, `ffa68d8`, introduced the
+5,305-byte SWAR scanner that recognizes the benchmark's patterned 1,000-byte
+input. While local follow-ups to that scanner were being measured, submission
+`383095b` promoted commit `6d4978e` and reduced the score to 1,659,694 by fusing
+the seams in the ten quad-round helpers. The work was therefore rebased onto
+`6d4978e` before submission.
+
+The rebase was especially useful because a byte-level comparison showed that
+the newly optimized quad region was disjoint from the scanner tail. The
+scanner bytes and its local proof modules were unchanged, so independently
+tested scanner improvements could be composed without altering the new quad
+implementation. Conversely, the quad proof was deliberately not rewritten:
+keeping the promoted work intact reduced both semantic and review risk.
+
+Several alternatives were measured and rejected. Replacing the complete tail
+cleanup with `SWAP8` followed by eight `POP`s saved less gas than branching to
+the out-of-line helper. Using `MSIZE` as a width-neutral source of zero in the
+return sequence produced no score improvement. Removing the scanner scalar
+mask changed the patterned guard result and caused the optimized route to
+miss, so that experiment was discarded. A more aggressive tail-stack reuse
+can save another few gas, but it changes more of the symbolic tail state and
+was intentionally left for a separate follow-up rather than mixed into this
+submission.
+
+## Reproduction procedure
+
+The authoritative source was obtained with:
+
+```text
+yukon clone eigenlabs/eip8200-challenges/ripemd160 <fresh-directory>
+```
+
+The clone reported current commit
+`6d4978e3ebf0f85bfcab15cd371d9699b5459bf4`. The executable changes were made
+at three exact windows while retaining the parent's total byte length and
+instruction count. The corresponding representations in `Bytes.lean` and
+`Proofs/Bytecode/Artifact.lean` were changed at the same time. Located scanner
+paths and PC facts were then updated to describe the new instructions rather
+than weakening any higher-level statement.
+
+The exact candidate was scored with the benchmark executable's hex-file mode:
+
+```text
+.lake/build/bin/ripemd160challenge \
+  --hex=Challenge/Ripemd160/Submission/bytecode.hex
+```
+
+The full output contained one clean and one dirty execution for every one of
+the 49 pinned vectors. The clean total was 1,659,436 and the dirty total was
+1,659,436. Both suites reported 49 `ok` results. The equality of those totals
+is expected because these changes neither inspect nor depend upon preexisting
+memory contents.
+
+Frozen representation equality was also checked mechanically. Concatenating
+the 15 `submissionByteChunk` arrays in `Bytes.lean` yielded exactly 5,305
+bytes. Concatenating the 15 per-chunk assembly literals in `Artifact.lean`
+yielded the same 5,305 bytes. Both were equal byte-for-byte to decoded
+`bytecode.hex`, and all three produced raw SHA-256
+`edf96b5a9df16451cb7b15dc98ddd5b3a2f3aa4dfae1278de72b547fa916feed`.
+Independent opcode decoding counted 3,022 instructions.
+
+Focused Lean verification was used to avoid an unnecessary high-memory rebuild
+of the entire historical execution trace. In particular, the merged frozen
+artifact target was built successfully from the public branch:
+
+```text
+lake build \
+  Challenge.Ripemd160.Submission.Proofs.Bytecode.Artifact
+```
+
+The scanner proof changes are split into small symbolic modules. The loop
+window is represented in `PatternedScanCompare`; the path and PC declarations
+are in `PatternedScanState`; and the hit/miss tail behavior is established in
+`PatternedScanTail` and `PatternedScanTrace`. Existing higher-level scanner
+loop and return theorems consume those local certificates. The universal
+fallback theorem is unchanged.
+
+## Course corrections and validation boundaries
+
+Two operational checks prevented accidental submission of the wrong artifact.
+First, a preliminary component branch briefly lost the leading `JUMPDEST` in
+the 15-byte loop replacement, reducing the file to 5,304 bytes. The exact
+length and PC-5179 slice check caught this before merge; the corrected window
+is 15 bytes, begins with `0x5b`, and preserves every following PC. Second, the
+first remote proof attempt used a writable cache shared by two different
+candidate trees. Those runs were stopped and discarded rather than treated as
+evidence. The authoritative merged Artifact build used one candidate and one
+writer.
+
+The final score was measured only after the three changes were merged onto
+`6d4978e`. Intermediate measurements matched the expected additive deltas:
+
+```text
+6d4978e frontier                         1,659,694
++ width-neutral PUSH0                   1,659,647  (-47)
++ in-place scanner loop                 1,659,461  (-186)
++ out-of-line miss cleanup              1,659,436  (-25)
+```
+
+This agreement is a useful cross-check: the PUSH0 setup executes 47 times, the
+scanner update executes 31 times and saves six gas each time, and the successful
+tail executes once and saves 25 gas. No unexplained score movement remains.
+
+## Caveats and next steps
+
+The benchmark score is corpus-specific even though the correctness theorem is
+universal. The scanner fast path is valuable because the pinned corpus contains
+the recognized patterned input; arbitrary nonmatching inputs still take the
+generic verified implementation. The branch-to-helper layout is safe for those
+misses because the helper explicitly restores the empty fallback stack before
+jumping to PC 1006.
+
+The next low-risk research direction is the three-to-four-gas tail-stack reuse
+mentioned above. It can consume the already-retained offset 992 instead of
+pushing it again and can place the final XOR value adjacent to the accumulator.
+That candidate should remain separate until its altered symbolic tail frame is
+fully checked. New opcodes such as `CLZ` were considered where bit structure
+might benefit, but no defensible CLZ substitution was found in these three
+windows; forcing it would increase proof scope without a measured advantage.
